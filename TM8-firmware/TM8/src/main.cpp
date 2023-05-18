@@ -14,7 +14,10 @@ RTCZero rtc; // RTC object
 const uint8_t btn1 = 2; // top left button
 const uint8_t btn2 = 38; // bottom left button
 const uint8_t btn3 = 24; // top right button
-const uint8_t btn4 = 21; // bottom right button, doesn't work for some reason
+
+// I found after lots of trial and error this is the only way to get TM8 to read PA12
+// without the whole thing freezing or acting up
+#define readBtn4 (PORT->Group[0].IN.reg & (1 << 12))
 
 bool menuActive = false; // main Menu ISR handler variable, becomes true when main menu is opened and false when menu's over
 
@@ -45,7 +48,7 @@ void menuInt() {
 Main menu function.
 holds a number of "main programs" that can be quickly accessed in the main menu.
 BTN3 scrolls through list of programs, hold button to scroll quickly
-BTN1 runs selected program
+BTN4 runs selected program
 After approx. 2 seconds of inactivity, mainMenu() returns 0 and goes back to home screen.
 */
 uint8_t mainMenu() {
@@ -65,12 +68,12 @@ uint8_t mainMenu() {
       delay(buttonDelay); // short delay to prevent crazy fast scrolling
       startTime = millis(); // reset timer to 0 to extend time
     }
-    if (!digitalRead(btn1)) { // if button 1 (top left) is pressed
+    if (!readBtn4) { // if button 4 (bottom right) is pressed
       for (int i=0; i<3; i++) { // blink selected program 3 times on the display
         lcd.dispStr("", 0);
         lcd.dispStr("", 1);
         delay(50);
-        lcd.dispDec(mainProgramNumber, 0);
+        lcd.dispDec(mainProgramNumber + 1, 0);
         lcd.dispStr(mainPrograms[mainProgramNumber], 1);
         delay(50);
       }
@@ -101,7 +104,11 @@ void setup() {
   pinMode(btn1, INPUT_PULLUP); // button 1, top left
   pinMode(btn2, INPUT_PULLUP); // button 2, bottom left
   pinMode(btn3, INPUT_PULLUP); // button 3, top right
-  // button 4 doesn't work for some reason
+
+  // enable pullups for PA12 and set it as output
+  // this is the only way to configure PA12 without having it freeze TM8
+  PORT->Group[0].PINCFG[12].reg = PORT_PINCFG_PULLEN | PORT_PINCFG_INEN;
+  PORT->Group[0].OUTSET.reg = PORT_PA12;
 
   // set button 3 (top right) to open main menu
   attachInterrupt(btn3, menuInt, FALLING);

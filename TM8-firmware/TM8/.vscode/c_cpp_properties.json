@@ -10,6 +10,7 @@
             "includePath": [
                 "c:/Users/iamer/Desktop/TM8/TM8-firmware/TM8/include",
                 "c:/Users/iamer/Desktop/TM8/TM8-firmware/TM8/src",
+                "c:/Users/iamer/Desktop/TM8/TM8-firmware/TM8/.pio/libdeps/adafruit_feather_m0/RTCZero/src",
                 "c:/Users/iamer/Desktop/TM8/TM8-firmware/TM8/lib/cdm4101",
                 "c:/Users/iamer/Desktop/TM8/TM8-firmware/TM8/lib/Wire",
                 "C:/Users/iamer/.platformio/packages/framework-arduino-samd-adafruit/libraries/Adafruit_TinyUSB_Arduino/src",
@@ -20,7 +21,6 @@
                 "C:/Users/iamer/.platformio/packages/framework-cmsis/CMSIS/DSP/Include",
                 "C:/Users/iamer/.platformio/packages/framework-arduino-samd-adafruit/variants/feather_m0",
                 "c:/Users/iamer/Desktop/TM8/TM8-firmware/TM8/.pio/libdeps/adafruit_feather_m0/Adafruit Arduino Zero ASF Core Library",
-                "c:/Users/iamer/Desktop/TM8/TM8-firmware/TM8/.pio/libdeps/adafruit_feather_m0/RTCZero/src",
                 "c:/Users/iamer/Desktop/TM8/TM8-firmware/TM8/.pio/libdeps/adafruit_feather_m0/Unity/src",
                 "C:/Users/iamer/.platformio/packages/framework-arduino-samd-adafruit/libraries/Adafruit_ZeroDMA",
                 "C:/Users/iamer/.platformio/packages/framework-arduino-samd-adafruit/libraries/Adafruit_ZeroDMA/utility",
@@ -40,6 +40,7 @@
                 "path": [
                     "c:/Users/iamer/Desktop/TM8/TM8-firmware/TM8/include",
                     "c:/Users/iamer/Desktop/TM8/TM8-firmware/TM8/src",
+                    "c:/Users/iamer/Desktop/TM8/TM8-firmware/TM8/.pio/libdeps/adafruit_feather_m0/RTCZero/src",
                     "c:/Users/iamer/Desktop/TM8/TM8-firmware/TM8/lib/cdm4101",
                     "c:/Users/iamer/Desktop/TM8/TM8-firmware/TM8/lib/Wire",
                     "C:/Users/iamer/.platformio/packages/framework-arduino-samd-adafruit/libraries/Adafruit_TinyUSB_Arduino/src",
@@ -50,7 +51,6 @@
                     "C:/Users/iamer/.platformio/packages/framework-cmsis/CMSIS/DSP/Include",
                     "C:/Users/iamer/.platformio/packages/framework-arduino-samd-adafruit/variants/feather_m0",
                     "c:/Users/iamer/Desktop/TM8/TM8-firmware/TM8/.pio/libdeps/adafruit_feather_m0/Adafruit Arduino Zero ASF Core Library",
-                    "c:/Users/iamer/Desktop/TM8/TM8-firmware/TM8/.pio/libdeps/adafruit_feather_m0/RTCZero/src",
                     "c:/Users/iamer/Desktop/TM8/TM8-firmware/TM8/.pio/libdeps/adafruit_feather_m0/Unity/src",
                     "C:/Users/iamer/.platformio/packages/framework-arduino-samd-adafruit/libraries/Adafruit_ZeroDMA",
                     "C:/Users/iamer/.platformio/packages/framework-arduino-samd-adafruit/libraries/Adafruit_ZeroDMA/utility",

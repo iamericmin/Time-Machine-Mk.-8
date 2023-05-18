@@ -55,7 +55,7 @@ uint8_t mainMenu() {
   detachInterrupt(btn3); // detach interrupts for button use during function
   delay(200); // short delay to not start fast-scrolling right as main menu is called
   while (millis() - startTime <= timeOut) { // while under timeout threshold
-    lcd.dispDec(mainProgramNumber, 0); // display program number on the left
+    lcd.dispDec(mainProgramNumber + 1, 0); // display program number on the left, but it starts from 1, not 0
     lcd.dispStr(mainPrograms[mainProgramNumber], 1); // display program name on the right
     if (!digitalRead(btn3)) { // if button 3 (top right) is pressed
       mainProgramNumber++; // increment main program counter and select next program

@@ -1,0 +1,11 @@
+{
+  "files.associations": {
+    "cstddef": "cpp",
+    "cmath": "cpp"
+  }
+}
+
+{
+  
+  "editor.fontFamily": "ProFontWindows",
+}

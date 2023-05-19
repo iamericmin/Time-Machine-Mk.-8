@@ -18,7 +18,7 @@ const uint8_t btn1 = 2; // top left button
 const uint8_t btn2 = 38; // bottom left button
 const uint8_t btn3 = 24; // top right button
 
-const uint8_t led5 = 5;
+const uint8_t led5 = 5; // LED5, middle auxilliary LED
 
 // I found after lots of trial and error this is the only way to get TM8 to read PA12
 // without the whole thing freezing or acting up
@@ -54,7 +54,7 @@ void recordSplitInt() {
   splitActive = true;
 }
 
-uint16_t chronoSplits[10]; // 10-long split record
+uint32_t chronoSplits[10]; // 10-long split record
 
 /*
 1/1000 second chronograph. Measures up to 59"59'999.
@@ -88,7 +88,7 @@ void chronoGraph() {
       splitActive = false; // reset split record ISR trigger bool
       lcd.dispDec(chronoMinutes * 100 + chronoSeconds, 0); // display split time
       lcd.dispDec(chronoMillis * 10 + chronoSplitsCounter, 1);
-      if (chronoSplitsCounter < 9) { // if split record slots are left, store split time in chronoSplits[] and increment counter
+      if (chronoSplitsCounter < 10) { // if split record slots are left, store split time in chronoSplits[] and increment counter
         chronoSplits[chronoSplitsCounter] = chronoMinutes * 100000 + chronoSeconds * 1000 + chronoMillis;
         chronoSplitsCounter++;
       } else {
@@ -96,6 +96,7 @@ void chronoGraph() {
       }
     }
   }
+  // quit chronograph animation
   delay(1000);
   lcd.dispStr("quit", 0);
   lcd.dispStr("chro", 1);
@@ -108,22 +109,29 @@ void chronoGraph() {
     lcd.dispStr("", 1);
     delay(75);
   }
-  detachInterrupt(btn3);
+  detachInterrupt(btn3); // detatch temporary btn3 ISR used for chronograph
 }
 
+/*
+retrieves chronograph split records
+first prompts whether to retrieve records from chrono or race
+user selects btn1 for chrono, btn3 for race
+*/
 uint8_t chronoData() {
-  lcd.dispStr("chro", 0);
+  lcd.dispStr("chro", 0); // prompt choice
   lcd.dispStr("race", 1);
-  while (digitalRead(btn1) && digitalRead(btn3) == 1) {
-    if (!digitalRead(btn1)) {
-      for (int i=0; i<10; i++) {
-        lcd.dispDec(chronoSplits[i] / 1000, 0);
-        lcd.dispDec(chronoSplits[i] % 1000, 1);
-        delay(1000);
-      }
-    } else if (!digitalRead(btn3)) {
-      return 0;
+  while (digitalRead(btn1) && digitalRead(btn3)); // wait for either btn1 or btn3 input
+  if (!digitalRead(btn1)) { // if chrono records selected
+    for (int i=0; i<10; i++) {
+      Serial.print(chronoSplits[i] / 1000);
+      Serial.print(" ||||| ");
+      Serial.println(chronoSplits[i] % 1000);
+      lcd.dispDec(chronoSplits[i] / 1000, 0);
+      lcd.dispDec(chronoSplits[i] % 1000, 1);
+      delay(1000);
     }
+  } else if (!digitalRead(btn3)) { // if race records selected
+    return 0;
   }
   return 0;
 }
@@ -169,6 +177,8 @@ uint8_t mainMenu() {
 
 /*
 gets program number from mainMenu() and runs it
+typically you would call runMainProgram(mainMenu()) because
+the value returned from mainMenu() goes where the prog argument is
 */
 void runMainProgram(uint8_t prog) {
   switch (prog) {
@@ -223,7 +233,7 @@ void setup() {
   // initialize LCDs
   lcd.init_lcd();
 
-  Serial.begin(115200);
+  Serial.begin(115200); // for debug reasons
 }
 
 // main function

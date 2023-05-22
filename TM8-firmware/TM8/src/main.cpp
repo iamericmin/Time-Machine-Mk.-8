@@ -20,12 +20,15 @@ const uint8_t btn3 = 24; // top right button
 
 const uint8_t led5 = 5; // LED5, middle auxilliary LED
 
+uint8_t leds[] = {7, A3, A1, 8, 5};
+
 // I found after lots of trial and error this is the only way to get TM8 to read PA12
 // without the whole thing freezing or acting up
 // returns 0 when closed, 1 when open
 #define readBtn4 (PORT->Group[0].IN.reg & (1 << 12))
 
-bool menuActive = false; // main Menu ISR handler variable, becomes true when main menu is opened and false when menu's over
+bool menuActive = false; // main Menu ISR handler variable,
+// becomes true when main menu is opened and false when menu's over
 bool splitActive = false;
 
 // list of programs in main menu 8 elements long with each element 5 bytes (4 bytes + line end)
@@ -52,6 +55,137 @@ void menuInt() {
 // ISR for recording splits in chronograph
 void recordSplitInt() {
   splitActive = true;
+}
+
+// hex array for tachometer animation frames
+uint8_t tachInit[7] = {0x00, 0x04, 0x0C, 0x2C, 0x6C, 0x6D, 0x6F};
+
+// uint8_t leds[] = {7, A3, A1, 8, 5};
+
+// animation mimicking tachometer start-up on vintage cars
+void animTach() {
+  srand(analogRead(A0));
+  uint8_t buffer;
+  for (int i=4; i>=0; i--) {
+    int ledToLight = random(0, i+1);
+    buffer= leds[ledToLight];
+    leds[ledToLight] = leds[i];
+    leds[i] = buffer;
+    digitalWrite(leds[i], 1);
+    delay(100);
+  }
+  for (int i=0; i<7; i++) {
+    for (int d=0; d<4; d++) {
+      lcd.Digits[d] = tachInit[i];
+    }
+    lcd.Update(0);
+    lcd.Update(1);
+    delay(80);
+  }
+  delay(250);
+  for (int i=6; i>=0; i--) {
+    for (int d=0; d<4; d++) {
+      lcd.Digits[d] = tachInit[i];
+    }
+    lcd.Update(0);
+    lcd.Update(1);
+    delay(80);
+  }
+  for (int i=4; i>=0; i--) {
+    int ledToLight = random(0, i+1);
+    buffer= leds[ledToLight];
+    leds[ledToLight] = leds[i];
+    leds[i] = buffer;
+    digitalWrite(leds[i], 0);
+    delay(100);
+  }
+}
+
+// simple animation for system check/bootup animation
+void blinkGo() {
+  for (int i=0; i<5; i++) {
+    lcd.dispStr("    ", 1);
+    delay(30);
+    for (int i=0; i<4; i++) {
+      lcd.dispCharRaw(i, 0x54, 1);
+    }
+    delay(30);
+  }
+  lcd.dispStr(" GO ", 1);
+}
+
+/*
+bootup animation. Scans all I2C buses and devices. Checks for response
+*/
+void bootUpSitRep() {
+  animTach();
+  uint8_t error;
+  uint8_t address;
+  uint8_t deviceCount = 0;
+  for(address = 1; address < 127; address++ ) {
+    Wire.beginTransmission(address);
+    error = Wire.endTransmission();
+    if (error == 0) {
+      if (address == 0x36) {
+        deviceCount++;
+        lcd.dispStr("Fuel", 0);
+        blinkGo();
+        delay(500);
+      } else if (address == 0x38) {
+        deviceCount++;
+        lcd.dispStr("LCDl", 0);
+        blinkGo();
+        delay(500);
+      }
+    }
+  }
+  for(address = 1; address < 127; address++ ) {
+    wire1.beginTransmission(address);
+    error = wire1.endTransmission();
+    if (error == 0) {
+      if (address == 0x18) {
+        deviceCount++;
+        lcd.dispStr("Accl", 0);
+        blinkGo();
+        delay(500);
+      } else if (address == 0x76) {
+        deviceCount++;
+        lcd.dispStr("temp", 0);
+        blinkGo();
+        delay(500);
+      } else if (address == 0x38) {
+        deviceCount++;
+        lcd.dispStr("LCDr", 0);
+        blinkGo();
+        delay(500);
+      }
+    }
+  }
+  delay(750);
+  if (deviceCount == 5) {
+    lcd.dispStr("", 1);
+    lcd.dispStr("All ", 0);
+    delay(750);
+    lcd.dispStr("Syst", 0);
+    lcd.dispStr("ems", 1);
+    delay(750);
+    lcd.dispStr("", 1);
+    for (int i=0; i<7; i++) {
+      lcd.dispStr(" GO ", 0);
+      delay(75);
+      lcd.dispStr("", 0);
+      delay(75);
+    }
+  } else {
+    for (int i=0; i<5; i++) {
+      lcd.dispStr(" Err", 0);
+      lcd.dispStr("or  ", 1);
+      delay(500);
+      lcd.dispStr("dcnt", 0);
+      lcd.dispDec(deviceCount, 1);
+      delay(500);
+    }
+  }
 }
 
 /*
@@ -128,7 +262,7 @@ bool setTime() {
         lcd.dispStr(" AM ", 0);
       }
       if (!digitalRead(btn1)) { // btn1 sets time to AM
-        ampm = 0;
+        ampm = 0; 
       }
       if (!digitalRead(btn2)) { // btn2 sets to PM
         ampm = 1;
@@ -180,18 +314,17 @@ void chronoGraph() {
     chronoMinutes %= 60; // compute elapsed minutes
     lcd.dispDec(chronoMinutes * 100 + chronoSeconds, 0); // display elapsed time on LCD
     lcd.dispDec(chronoMillis * 10 + chronoSplitsCounter, 1); // display elapsed milliseconds + split record slot on the right
-    if (splitActive) { // if button 3 is pressed, show split time for 3 seconds
-      while(!digitalRead(btn3)) {digitalWrite(led5, canRecordSplit);} // show split time & light up LED5 while btn3 is depressed
+    if (splitActive && chronoSplitsCounter < 10) { // if button 3 is pressed and split record space is available
+      while(!digitalRead(btn3)) {digitalWrite(led5, 1);} // show split time & light up LED5 while btn3 is depressed
       digitalWrite(led5, 0); // turn off LED5
       splitActive = false; // reset split record ISR trigger bool
       lcd.dispDec(chronoMinutes * 100 + chronoSeconds, 0); // display split time
       lcd.dispDec(chronoMillis * 10 + chronoSplitsCounter, 1);
-      if (chronoSplitsCounter < 10) { // if split record slots are left, store split time in chronoSplits[] and increment counter
-        chronoSplits[chronoSplitsCounter] = chronoMinutes * 100000 + chronoSeconds * 1000 + chronoMillis;
-        chronoSplitsCounter++;
-      } else {
-        canRecordSplit = 0;
-      }
+      chronoSplits[chronoSplitsCounter] = chronoMinutes * 100000 + chronoSeconds * 1000 + chronoMillis;
+      Serial.print(chronoSplits[chronoSplitsCounter]); // debug messages
+      Serial.print(" | ");
+      Serial.println(chronoSplitsCounter);
+      chronoSplitsCounter++; // increment chronoSplitsCounter
     }
   }
   // quit chronograph animation
@@ -218,15 +351,32 @@ user selects btn1 for chrono, btn3 for race
 uint8_t chronoData() {
   lcd.dispStr("chro", 0); // prompt choice
   lcd.dispStr("race", 1);
+  uint8_t recCounter = 0;
   while (digitalRead(btn1) && digitalRead(btn3)); // wait for either btn1 or btn3 input
   if (!digitalRead(btn1)) { // if chrono records selected
-    for (int i=0; i<10; i++) {
-      Serial.print(chronoSplits[i] / 1000);
-      Serial.print(" ||||| ");
-      Serial.println(chronoSplits[i] % 1000);
-      lcd.dispDec(chronoSplits[i] / 1000, 0);
-      lcd.dispDec(chronoSplits[i] % 1000, 1);
-      delay(1000);
+    while(readBtn4) {
+      lcd.dispDec(chronoSplits[recCounter] / 1000, 0);
+      lcd.dispDec((chronoSplits[recCounter] % 1000) * 10 + recCounter, 1);
+      if (!digitalRead(btn3)) {
+        recCounter++;
+        if (recCounter > 9) {
+          recCounter = 0;
+        }
+        Serial.print(chronoSplits[recCounter]);
+        Serial.print(" | ");
+        Serial.println(recCounter);
+        delay(200);
+      }
+      else if (!digitalRead(btn1)) {
+        recCounter--;
+        if (recCounter > 9) {
+          recCounter = 9;
+        }
+        Serial.print(chronoSplits[recCounter]);
+        Serial.print(" | ");
+        Serial.println(recCounter);
+        delay(200);
+      }
     }
   } else if (!digitalRead(btn3)) { // if race records selected
     return 0;
@@ -300,6 +450,10 @@ void runMainProgram(uint8_t prog) {
 
 // system initialization
 void setup() {
+
+  // initialize LCDs
+  lcd.init_lcd();
+
   rtc.begin(); // fire up RTC
 
   // set RTC time
@@ -319,7 +473,9 @@ void setup() {
   pinMode(btn2, INPUT_PULLUP); // button 2, bottom left
   pinMode(btn3, INPUT_PULLUP); // button 3, top right
 
-  pinMode(led5, OUTPUT);
+  for (int i=0; i<5; i++) {
+    pinMode(leds[i], OUTPUT);
+  }
 
   // enable pullups for PA12 and set it as output
   // this is the only way to configure PA12 without having it freeze TM8
@@ -331,10 +487,9 @@ void setup() {
   // leading to systemw-wide clock delays
   attachInterrupt(btn3, menuInt, FALLING);
 
-  // initialize LCDs
-  lcd.init_lcd();
-
   Serial.begin(115200); // for debug reasons
+
+  bootUpSitRep();
 }
 
 // main function

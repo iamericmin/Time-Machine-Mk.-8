@@ -60,30 +60,28 @@ void recordSplitInt() {
 // hex array for tachometer animation frames
 uint8_t tachInit[7] = {0x00, 0x04, 0x0C, 0x2C, 0x6C, 0x6D, 0x6F};
 
-// uint8_t leds[] = {7, A3, A1, 8, 5};
-
 // animation mimicking tachometer start-up on vintage cars
 void animTach() {
-  srand(analogRead(A0));
-  uint8_t buffer;
-  for (int i=4; i>=0; i--) {
-    int ledToLight = random(0, i+1);
-    buffer= leds[ledToLight];
-    leds[ledToLight] = leds[i];
-    leds[i] = buffer;
-    digitalWrite(leds[i], 1);
+  srand(analogRead(A0)); // set random seed to analog noise on A0
+  uint8_t buffer; // buffer variable used for swapping leds[] elements
+  for (int i=4; i>=0; i--) { // decrease RNG range for no overlap
+    int ledToLight = random(0, i+1); // choose random LED to light
+    buffer= leds[ledToLight]; // swap randomly selected LED with last array value.
+    leds[ledToLight] = leds[i]; // randomly selected LED goes last in the array
+    leds[i] = buffer; // last array element goes to where randomly selected LED was
+    digitalWrite(leds[i], 1); // light up randomly selected LED
     delay(100);
   }
-  for (int i=0; i<7; i++) {
-    for (int d=0; d<4; d++) {
+  for (int i=0; i<7; i++) { // for each frame of tachInit[] animation
+    for (int d=0; d<4; d++) { // display on all digits
       lcd.Digits[d] = tachInit[i];
     }
-    lcd.Update(0);
+    lcd.Update(0); // update both LCDs
     lcd.Update(1);
     delay(80);
   }
   delay(250);
-  for (int i=6; i>=0; i--) {
+  for (int i=6; i>=0; i--) { // like above, but opposite
     for (int d=0; d<4; d++) {
       lcd.Digits[d] = tachInit[i];
     }
@@ -91,7 +89,7 @@ void animTach() {
     lcd.Update(1);
     delay(80);
   }
-  for (int i=4; i>=0; i--) {
+  for (int i=4; i>=0; i--) { // Turns off all LEDs in a totally new random order.
     int ledToLight = random(0, i+1);
     buffer= leds[ledToLight];
     leds[ledToLight] = leds[i];
@@ -118,20 +116,20 @@ void blinkGo() {
 bootup animation. Scans all I2C buses and devices. Checks for response
 */
 void bootUpSitRep() {
-  animTach();
-  uint8_t error;
-  uint8_t address;
-  uint8_t deviceCount = 0;
+  animTach(); // vintage tachometer animation
+  uint8_t error; // I2C error code
+  uint8_t address; // I2C device address
+  uint8_t deviceCount = 0; // total number of devices detected. Increments with each device detected. Should be 5.
   for(address = 1; address < 127; address++ ) {
-    Wire.beginTransmission(address);
+    Wire.beginTransmission(address); // start with first I2C bus
     error = Wire.endTransmission();
     if (error == 0) {
-      if (address == 0x36) {
+      if (address == 0x36) { // if MAX17048 fuel gauge detected on address 0x36
         deviceCount++;
         lcd.dispStr("Fuel", 0);
         blinkGo();
         delay(500);
-      } else if (address == 0x38) {
+      } else if (address == 0x38) { // if left LCD detected on address 0x38
         deviceCount++;
         lcd.dispStr("LCDl", 0);
         blinkGo();
@@ -140,20 +138,20 @@ void bootUpSitRep() {
     }
   }
   for(address = 1; address < 127; address++ ) {
-    wire1.beginTransmission(address);
+    wire1.beginTransmission(address); // scan second I2C bus
     error = wire1.endTransmission();
     if (error == 0) {
-      if (address == 0x18) {
+      if (address == 0x18) { // if LIS3DH accelerometer detected on address 0x18
         deviceCount++;
         lcd.dispStr("Accl", 0);
         blinkGo();
         delay(500);
-      } else if (address == 0x76) {
+      } else if (address == 0x76) { // if BME680 environmental sensor detected on address 0x76
         deviceCount++;
         lcd.dispStr("temp", 0);
         blinkGo();
         delay(500);
-      } else if (address == 0x38) {
+      } else if (address == 0x38) { // if right LCD detected on address 0x38
         deviceCount++;
         lcd.dispStr("LCDr", 0);
         blinkGo();
@@ -162,7 +160,7 @@ void bootUpSitRep() {
     }
   }
   delay(750);
-  if (deviceCount == 5) {
+  if (deviceCount == 5) { // if all devices detected
     lcd.dispStr("", 1);
     lcd.dispStr("All ", 0);
     delay(750);
@@ -176,13 +174,13 @@ void bootUpSitRep() {
       lcd.dispStr("", 0);
       delay(75);
     }
-  } else {
+  } else { // if a different number of devices detected
     for (int i=0; i<5; i++) {
       lcd.dispStr(" Err", 0);
       lcd.dispStr("or  ", 1);
       delay(500);
       lcd.dispStr("dcnt", 0);
-      lcd.dispDec(deviceCount, 1);
+      lcd.dispDec(deviceCount, 1); // show number of devices detected
       delay(500);
     }
   }

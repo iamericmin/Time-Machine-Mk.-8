@@ -54,6 +54,104 @@ void recordSplitInt() {
   splitActive = true;
 }
 
+/*
+Sets the time.
+returns 0 in case of an error (hours > 23 or minutes > 59) but this shouldn't happen.
+bool ampm is 0 for AM, 1 for PM
+Automagically detects 12H/24H format and if user inputs in 12H format, asks for AM/PM as well
+*/
+bool setTime() {
+  uint8_t hourTens = 0; // hour tens digit
+  uint8_t hourOnes = 0; // hour ones digit
+  uint8_t minuteTens = 0; // minute tens digit
+  uint8_t minuteOnes = 0; // minute ones digit
+  bool ampm = 0; // 0 for AM, 1 for PM
+  lcd.dispStr("Hset", 1); // indicate hour set mode
+  while(readBtn4) { // until btn4 is pressed
+    lcd.dispDec(hourTens * 10 + hourOnes, 0); // display hour value to set
+    if (!digitalRead(btn1)) { // btn1 increments tens digit
+      hourTens++;
+      if (hourTens > 2 || hourTens * 10 + hourOnes > 23) { // prevent overflow to stay within 0-23
+        hourTens = 0;
+      }
+      delay(200);
+    }
+    if (!digitalRead(btn2)) { // btn2 increments ones digit
+      hourOnes++;
+      if (hourOnes > 9 || hourTens * 10 + hourOnes > 23) { // prevent overflow to stay within 0-23
+        hourOnes = 0;
+      }
+      delay(200);
+    }
+  }
+  lcd.dispStr("hour", 0); // confirm hour has been set
+  lcd.dispStr(" set", 1);
+  delay(750);
+  lcd.dispStr("Mset", 1); // indicate minute set mode
+  while(readBtn4) { // until btn4 is pressed
+    lcd.dispDec(minuteTens * 10 + minuteOnes, 0); // display minute value to set
+    if (!digitalRead(btn1)) { // btn1 increments tens digit
+      minuteTens++;
+      if (minuteTens > 5 || minuteTens * 10 + minuteOnes > 59) { // prevent overflow to stay within 0-59
+        minuteTens = 0;
+      }
+      delay(200);
+    }
+    if (!digitalRead(btn2)) { // btn2 increments ones digit
+      minuteOnes++;
+      if (minuteOnes > 9 || minuteTens * 10 + minuteOnes > 59) { // prevent overflow to stay within 0-59
+        minuteOnes = 0;
+      }
+      delay(200);
+    }
+  }
+  uint8_t hours = hourTens * 10 + hourOnes; // compute hour and minute values from selection
+  uint8_t minutes = minuteTens * 10 + minuteOnes;
+  if (hours > 23 || minutes > 59) { // error handling if hour/min values are beyond acceptable range, shouldn't happen tho
+    lcd.dispStr(" Err", 0);
+    lcd.dispStr("or  ", 1);
+    delay(1000);
+    return 0; // quit setTime()
+  }
+  lcd.dispDec(hours, 0);
+  lcd.dispDec(minutes, 1);
+  delay(2000);
+  if (hours > 12) { // if hour is set above 12, automatically set to PM
+    ampm = 1;
+  } else if (hours == 0) { // if hour is set to 0, automatically set to AM
+    ampm = 0;
+  } else if (hours <= 12) { // if hour is in 12H format(1-12), ask for AM/PM
+    while(readBtn4) {
+      if (ampm) {
+        lcd.dispStr(" PM ", 0);
+      } else {
+        lcd.dispStr(" AM ", 0);
+      }
+      if (!digitalRead(btn1)) { // btn1 sets time to AM
+        ampm = 0;
+      }
+      if (!digitalRead(btn2)) { // btn2 sets to PM
+        ampm = 1;
+      }
+    }
+  }
+
+  if (hours < 12 && ampm) { // if user input is 12H format and PM
+    rtc.setHours(hours + 12); // set RTC to user input + 12 cuz RTC only understands 24H format
+  } else if (hours == 12 && !ampm) { // if hour is set to 12 and AM
+    rtc.setHours(0); // set RTC to 0 cuz RTC would take 12 as 12 PM
+  } else {
+    rtc.setHours(hours);
+  }
+  rtc.setMinutes(minutes);
+  rtc.setSeconds(0);
+  lcd.dispStr("time", 0);
+  lcd.dispStr(" set", 1);
+  delay(1000);
+  return 1;
+}
+
+
 uint32_t chronoSplits[10]; // 10-long split record
 
 /*
@@ -71,7 +169,7 @@ void chronoGraph() {
   } while(!readBtn4); // start on rising edge to prevent split recording immediately
   uint32_t chronoStartTime = millis(); // time when chronograph started, in milliseconds
   uint32_t chronoMillis; // declare variable for elapsed time in milliseconds
-  uint32_t chronoSeconds; // ...elapsed time in seconds```
+  uint32_t chronoSeconds; // ...elapsed time in seconds
   uint32_t chronoMinutes; // ...elapsed time in minutes
   while(readBtn4) { // until button 4 is pressed (btn4 will quit chronograph)
     chronoMillis = millis() - chronoStartTime; // compute elapsed time in milliseconds
@@ -190,6 +288,9 @@ void runMainProgram(uint8_t prog) {
   case 2:
     chronoData();
     break;
+  case 4:
+    setTime();
+    break;
   default:
     lcd.dispStr("Fuck", 0);
     delay(1000);
@@ -248,4 +349,5 @@ void loop() {
     attachInterrupt(btn3, menuInt, FALLING); // reattach interrupt to resume normal button function in main()
     menuActive = false; // reset menuActive to false
   }
+  
 }

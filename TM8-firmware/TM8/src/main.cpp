@@ -39,7 +39,7 @@ bool splitActive = false; // ISR handler variable for recording splits in chrono
 // first program is "quit", gets called when mainMenu() quits from no activity. Returns to main() loop.
 char mainPrograms[7][5] = {"quit", "Chro", "data", "Adju", "Prty", "Race", "Flsh"};
 
-#define NUM_MAIN_PROGRAMS 9 // number of main programs
+#define NUM_MAIN_PROGRAMS 7 // number of main programs
 
 // RTC time variables
 uint8_t seconds = 0;
@@ -297,12 +297,15 @@ BTN4: start/stop chronograph
 BTN3: record split. stops after all 10 slots are filled. record slot shown on rightmost digit.
 BTN1: show time. Frequent use hampers precision.
 */
-void chronoGraph() {
+bool chronoGraph() {
   attachInterrupt(btn3, recordSplitInt, FALLING);
   uint8_t chronoSplitsCounter = 0;
   while(readBtn4) { // start when button 4 is pressed
     lcd.dispStr("btn4", 0);
     lcd.dispStr("strt", 1);
+    if (!digitalRead(btn3)) { // press btn3 to quit
+      return 0;
+    }
   } while(!readBtn4); // start on rising edge to prevent split recording immediately
   uint32_t chronoStartTime = millis(); // time when chronograph started, in milliseconds
   uint32_t chronoMillis; // declare variable for elapsed time in milliseconds
@@ -317,7 +320,7 @@ void chronoGraph() {
     chronoMinutes %= 60; // compute elapsed minutes
     lcd.dispDec(chronoMinutes * 100 + chronoSeconds, 0); // display elapsed time on LCD
     lcd.dispDec(chronoMillis * 10 + chronoSplitsCounter, 1); // display elapsed milliseconds + split record slot on the right
-    if (splitActive && chronoSplitsCounter < 10) { // if button 3 is pressed and split record space is available
+    if (splitActive && chronoSplitsCounter < 10 && !readBtn4) { // if button 3 is pressed and split record space is available. The last !readBtn4 is needed cuz for some reason without it, the while loop immediately gets triggered as the chrono starts
       while(!digitalRead(btn3)) {digitalWrite(led5, 1);} // show split time & light up LED5 while btn3 is depressed
       digitalWrite(led5, 0); // turn off LED5
       splitActive = false; // reset split record ISR trigger bool
@@ -349,62 +352,104 @@ void chronoGraph() {
     delay(75);
   }
   detachInterrupt(btn3); // detatch temporary btn3 ISR used for chronograph
+  return 0;
 }
 
-uint32_t raceLaps[100] = {};
+char tracks[12][5] = {
+  "spa",
+  "mnza",
+  "nurb",
+  "mnco",
+  "szka"
+};
 
-void raceChrono() {
+float distances[12] {4.352, 3.600, 12.944, 2.074, 3.608};
+
+uint32_t raceSplits[100] = {};
+uint16_t averageSpeeds[100] = {};
+uint8_t trackSelection = 0;
+
+/*
+Race chronograph. In addition to all features in the regular chronograph,
+also shows average speed per split and 
+*/
+bool raceChrono() {
+  splitActive = false;
+  while (readBtn4) {
+    lcd.dispStr("trck", 0);
+    lcd.dispStr(tracks[trackSelection], 1);
+    if (!digitalRead(btn1)) {
+      trackSelection--;
+      if (trackSelection > 4) trackSelection = 4;
+      delay(200);
+    }
+    else if (!digitalRead(btn3)) {
+      trackSelection++;
+      if (trackSelection > 4) trackSelection = 0;
+      delay(200);
+    }
+  } while(!readBtn4); // start on rising edge to prevent split recording immediately
+  delay(200);
+  uint16_t distance = distances[trackSelection];
   attachInterrupt(btn3, recordSplitInt, FALLING);
-  uint8_t chronoSplitsCounter = 0;
+  uint8_t raceSplitsCounter = 0;
   while(readBtn4) { // start when button 4 is pressed
     lcd.dispStr("btn4", 0);
     lcd.dispStr("strt", 1);
+    if (!digitalRead(btn3)) { // press btn3 to quit
+      return 0;
+    }
   } while(!readBtn4); // start on rising edge to prevent split recording immediately
-  uint32_t chronoStartTime = millis(); // time when chronograph started, in milliseconds
-  uint32_t chronoMillis; // declare variable for elapsed time in milliseconds
-  uint32_t chronoSeconds; // ...elapsed time in seconds
-  uint32_t chronoMinutes; // ...elapsed time in minutes
+  uint32_t raceStartTime = millis(); // time when chronograph started, in milliseconds
+  uint32_t raceMillis; // declare variable for elapsed time in milliseconds
+  uint32_t raceSeconds; // ...elapsed time in seconds
+  uint32_t raceMinutes; // ...elapsed time in minutes
   while(readBtn4) { // until button 4 is pressed (btn4 will quit chronograph)
-    chronoMillis = millis() - chronoStartTime; // compute elapsed time in milliseconds
-    chronoSeconds = chronoMillis / 1000; // compute elapsed time in seconds
-    chronoMinutes = chronoSeconds / 60; // compute elapsed time in minutes
-    chronoMillis %= 1000; // compute elapsed milliseconds
-    chronoSeconds %= 60; // compute elapsed seconds
-    chronoMinutes %= 60; // compute elapsed minutes
-    lcd.dispDec(chronoMinutes * 100 + chronoSeconds, 0); // display elapsed time on LCD
-    lcd.dispDec(chronoMillis * 10 + chronoSplitsCounter, 1); // display elapsed milliseconds + split record slot on the right
-    if (splitActive && chronoSplitsCounter < 10) { // if button 3 is pressed and split record space is available
-      while(!digitalRead(btn3)) {digitalWrite(led5, 1);} // show split time & light up LED5 while btn3 is depressed
+    raceMillis = millis() - raceStartTime; // compute elapsed time in milliseconds
+    raceSeconds = raceMillis / 1000; // compute elapsed time in seconds
+    raceMinutes = raceSeconds / 60; // compute elapsed time in minutes
+    raceMillis %= 1000; // compute elapsed milliseconds
+    raceSeconds %= 60; // compute elapsed seconds
+    raceMinutes %= 60; // compute elapsed minutes
+    lcd.dispDec(raceMinutes * 100 + raceSeconds, 0); // display elapsed time on LCD
+    lcd.dispDec(raceMillis * 10 + raceSplitsCounter, 1); // display elapsed milliseconds + split record slot on the right
+    if (splitActive && raceSplitsCounter < 100 && !readBtn4) { // if button 3 is pressed and split record space is available. The last !readBtn4 is needed cuz for some reason without it, the while loop immediately gets triggered as the chrono starts
+      while(!digitalRead(btn3)) {
+        digitalWrite(led5, 1); // show split time & light up LED5 while btn3 is depressed
+        lcd.dispDec(raceMinutes * 100 + raceSeconds, 0); // display split time
+        lcd.dispDec(raceMillis, 1);
+      }
       digitalWrite(led5, 0); // turn off LED5
+      float vavg = (distances[trackSelection]) / (float)((float)(millis() - raceStartTime) / 1000 / 3600);
+      lcd.dispDec((int)(vavg), 0);
+      lcd.dispDec(((vavg - (int)(vavg)) * 100), 1);
       splitActive = false; // reset split record ISR trigger bool
-      lcd.dispDec(chronoMinutes * 100 + chronoSeconds, 0); // display split time
-      lcd.dispDec(chronoMillis * 10 + chronoSplitsCounter, 1);
-      chronoSplits[chronoSplitsCounter] = chronoMinutes * 100000 + chronoSeconds * 1000 + chronoMillis;
-      Serial.print(chronoSplits[chronoSplitsCounter]); // debug messages
-      Serial.println(chronoSplitsCounter);
-      chronoSplitsCounter++; // increment chronoSplitsCounter
+      raceSplits[raceSplitsCounter] = raceMinutes * 100000 + raceSeconds * 1000 + raceMillis;
+      raceSplitsCounter++; // increment raceSplitsCounter
+      delay(2000);
     }
     if (!digitalRead(btn1)) {
       while(!digitalRead(btn1)) {
         lcd.dispDec(rtc.getHours() * 100 + rtc.getMinutes(), 0);
-        lcd.dispDec(rtc.getSeconds(), 1);
+        lcd.dispDec(raceSplitsCounter, 1);
       }
     }
   }
   // quit chronograph animation
   delay(1000);
   lcd.dispStr("quit", 0);
-  lcd.dispStr("chro", 1);
+  lcd.dispStr("race", 1);
   delay(1000);
   for (int i=0; i<3; i++) {
     lcd.dispStr("quit", 0);
-    lcd.dispStr("chro", 1);
+    lcd.dispStr("race", 1);
     delay(75);
     lcd.dispStr("", 0);
     lcd.dispStr("", 1);
     delay(75);
   }
-  detachInterrupt(btn3); // detatch temporary btn3 ISR used for chronograph
+  detachInterrupt(btn3); // detatch temporary btn3 ISR used for race chronograph
+  return 0;
 }
 
 /*
@@ -428,8 +473,6 @@ uint8_t chronoData() {
           recCounter = 0;
         }
         Serial.print(chronoSplits[recCounter]);
-        Serial.print(" | ");
-        Serial.println(recCounter);
         delay(200);
       }
       else if (!digitalRead(btn1)) {
@@ -438,8 +481,6 @@ uint8_t chronoData() {
           recCounter = 9;
         }
         Serial.print(chronoSplits[recCounter]);
-        Serial.print(" | ");
-        Serial.println(recCounter);
         delay(200);
       }
     }
@@ -457,7 +498,7 @@ void party() {
 }
 
 void flashLight() {
-  
+
 }
 
 /*
@@ -578,7 +619,7 @@ void setup() {
 
   fuel.begin(); // initialize MAX17048
 
-  bootUpSitRep();
+  //bootUpSitRep();
 }
 
 // main function

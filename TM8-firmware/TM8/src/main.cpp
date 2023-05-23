@@ -4,6 +4,7 @@
 #include <cdm4101.h>
 #include <stdio.h>
 #include <RTCZero.h>
+#include <Adafruit_MAX1704X.h>
 
 #define INACTIVITY_TIMEOUT 2000 // inactivity threshold of 2 seconds
 #define BUTTON_DELAY 200 // delay between button readings for switching between programs
@@ -13,6 +14,8 @@ TwoWire wire1(&sercom2, 4, 3); // new Wire object to set up second I2C port on S
 CDM4101 lcd; // LCD object
 
 RTCZero rtc; // RTC object
+
+Adafruit_MAX17048 fuel;
 
 const uint8_t btn1 = 2; // top left button
 const uint8_t btn2 = 38; // bottom left button
@@ -29,11 +32,12 @@ uint8_t leds[] = {7, A3, A1, 8, 5};
 
 bool menuActive = false; // main Menu ISR handler variable,
 // becomes true when main menu is opened and false when menu's over
-bool splitActive = false;
+
+bool splitActive = false; // ISR handler variable for recording splits in chronograph
 
 // list of programs in main menu 8 elements long with each element 5 bytes (4 bytes + line end)
 // first program is "quit", gets called when mainMenu() quits from no activity. Returns to main() loop.
-char mainPrograms[9][5] = {"quit", "Chro", "data", "Alrm", "Adju", "Prty", "Race", "temp", "Flsh"};
+char mainPrograms[7][5] = {"quit", "Chro", "data", "Adju", "Prty", "Race", "Flsh"};
 
 #define NUM_MAIN_PROGRAMS 9 // number of main programs
 
@@ -163,10 +167,10 @@ void bootUpSitRep() {
   if (deviceCount == 5) { // if all devices detected
     lcd.dispStr("", 1);
     lcd.dispStr("All ", 0);
-    delay(750);
+    delay(500);
     lcd.dispStr("Syst", 0);
     lcd.dispStr("ems", 1);
-    delay(750);
+    delay(500);
     lcd.dispStr("", 1);
     for (int i=0; i<7; i++) {
       lcd.dispStr(" GO ", 0);
@@ -245,6 +249,7 @@ bool setTime() {
     delay(1000);
     return 0; // quit setTime()
   }
+  // for some reason, doesn't work properly without the next three lines
   lcd.dispDec(hours, 0);
   lcd.dispDec(minutes, 1);
   delay(2000);
@@ -289,10 +294,10 @@ uint32_t chronoSplits[10]; // 10-long split record
 /*
 1/1000 second chronograph. Measures up to 59"59'999.
 BTN4: start/stop chronograph
-BTN3: record split. slots 0-9, automatic rollover. record slot shown on rightmost digit.
+BTN3: record split. stops after all 10 slots are filled. record slot shown on rightmost digit.
+BTN1: show time. Frequent use hampers precision.
 */
 void chronoGraph() {
-  bool canRecordSplit = 1; // becomes false if all 10 split record slots are full
   attachInterrupt(btn3, recordSplitInt, FALLING);
   uint8_t chronoSplitsCounter = 0;
   while(readBtn4) { // start when button 4 is pressed
@@ -320,9 +325,70 @@ void chronoGraph() {
       lcd.dispDec(chronoMillis * 10 + chronoSplitsCounter, 1);
       chronoSplits[chronoSplitsCounter] = chronoMinutes * 100000 + chronoSeconds * 1000 + chronoMillis;
       Serial.print(chronoSplits[chronoSplitsCounter]); // debug messages
-      Serial.print(" | ");
       Serial.println(chronoSplitsCounter);
       chronoSplitsCounter++; // increment chronoSplitsCounter
+    }
+    if (!digitalRead(btn1)) {
+      while(!digitalRead(btn1)) {
+        lcd.dispDec(rtc.getHours() * 100 + rtc.getMinutes(), 0);
+        lcd.dispDec(rtc.getSeconds(), 1);
+      }
+    }
+  }
+  // quit chronograph animation
+  delay(1000);
+  lcd.dispStr("quit", 0);
+  lcd.dispStr("chro", 1);
+  delay(1000);
+  for (int i=0; i<3; i++) {
+    lcd.dispStr("quit", 0);
+    lcd.dispStr("chro", 1);
+    delay(75);
+    lcd.dispStr("", 0);
+    lcd.dispStr("", 1);
+    delay(75);
+  }
+  detachInterrupt(btn3); // detatch temporary btn3 ISR used for chronograph
+}
+
+uint32_t raceLaps[100] = {};
+
+void raceChrono() {
+  attachInterrupt(btn3, recordSplitInt, FALLING);
+  uint8_t chronoSplitsCounter = 0;
+  while(readBtn4) { // start when button 4 is pressed
+    lcd.dispStr("btn4", 0);
+    lcd.dispStr("strt", 1);
+  } while(!readBtn4); // start on rising edge to prevent split recording immediately
+  uint32_t chronoStartTime = millis(); // time when chronograph started, in milliseconds
+  uint32_t chronoMillis; // declare variable for elapsed time in milliseconds
+  uint32_t chronoSeconds; // ...elapsed time in seconds
+  uint32_t chronoMinutes; // ...elapsed time in minutes
+  while(readBtn4) { // until button 4 is pressed (btn4 will quit chronograph)
+    chronoMillis = millis() - chronoStartTime; // compute elapsed time in milliseconds
+    chronoSeconds = chronoMillis / 1000; // compute elapsed time in seconds
+    chronoMinutes = chronoSeconds / 60; // compute elapsed time in minutes
+    chronoMillis %= 1000; // compute elapsed milliseconds
+    chronoSeconds %= 60; // compute elapsed seconds
+    chronoMinutes %= 60; // compute elapsed minutes
+    lcd.dispDec(chronoMinutes * 100 + chronoSeconds, 0); // display elapsed time on LCD
+    lcd.dispDec(chronoMillis * 10 + chronoSplitsCounter, 1); // display elapsed milliseconds + split record slot on the right
+    if (splitActive && chronoSplitsCounter < 10) { // if button 3 is pressed and split record space is available
+      while(!digitalRead(btn3)) {digitalWrite(led5, 1);} // show split time & light up LED5 while btn3 is depressed
+      digitalWrite(led5, 0); // turn off LED5
+      splitActive = false; // reset split record ISR trigger bool
+      lcd.dispDec(chronoMinutes * 100 + chronoSeconds, 0); // display split time
+      lcd.dispDec(chronoMillis * 10 + chronoSplitsCounter, 1);
+      chronoSplits[chronoSplitsCounter] = chronoMinutes * 100000 + chronoSeconds * 1000 + chronoMillis;
+      Serial.print(chronoSplits[chronoSplitsCounter]); // debug messages
+      Serial.println(chronoSplitsCounter);
+      chronoSplitsCounter++; // increment chronoSplitsCounter
+    }
+    if (!digitalRead(btn1)) {
+      while(!digitalRead(btn1)) {
+        lcd.dispDec(rtc.getHours() * 100 + rtc.getMinutes(), 0);
+        lcd.dispDec(rtc.getSeconds(), 1);
+      }
     }
   }
   // quit chronograph animation
@@ -352,6 +418,7 @@ uint8_t chronoData() {
   uint8_t recCounter = 0;
   while (digitalRead(btn1) && digitalRead(btn3)); // wait for either btn1 or btn3 input
   if (!digitalRead(btn1)) { // if chrono records selected
+    delay(225);
     while(readBtn4) {
       lcd.dispDec(chronoSplits[recCounter] / 1000, 0);
       lcd.dispDec((chronoSplits[recCounter] % 1000) * 10 + recCounter, 1);
@@ -380,6 +447,17 @@ uint8_t chronoData() {
     return 0;
   }
   return 0;
+}
+
+/*
+Party mode.
+Watch flashes custom messages and LEDs
+*/
+void party() {
+}
+
+void flashLight() {
+  
 }
 
 /*
@@ -426,6 +504,8 @@ gets program number from mainMenu() and runs it
 typically you would call runMainProgram(mainMenu()) because
 the value returned from mainMenu() goes where the prog argument is
 */
+
+//char mainPrograms[7][5] = {"quit", "Chro", "data", "Adju", "Prty", "Race", "Flsh"};
 void runMainProgram(uint8_t prog) {
   switch (prog) {
   case 0:
@@ -436,8 +516,17 @@ void runMainProgram(uint8_t prog) {
   case 2:
     chronoData();
     break;
-  case 4:
+  case 3:
     setTime();
+    break;
+  case 4:
+    party();
+    break;
+  case 5: 
+    raceChrono();
+    break;
+  case 6:
+    flashLight();
     break;
   default:
     lcd.dispStr("Fuck", 0);
@@ -475,7 +564,7 @@ void setup() {
     pinMode(leds[i], OUTPUT);
   }
 
-  // enable pullups for PA12 and set it as output
+  // enable pullups for PA12, sets it to input, writes HIGH to it
   // this is the only way to configure PA12 without having it freeze TM8
   PORT->Group[0].PINCFG[12].reg = PORT_PINCFG_PULLEN | PORT_PINCFG_INEN;
   PORT->Group[0].OUTSET.reg = PORT_PA12;
@@ -487,14 +576,19 @@ void setup() {
 
   Serial.begin(115200); // for debug reasons
 
+  fuel.begin(); // initialize MAX17048
+
   bootUpSitRep();
 }
 
 // main function
 void loop() {
+  uint8_t battLvl = (uint8_t) fuel.cellPercent();
+  if (battLvl > 99) battLvl = 99;
+
   // LCD displays hours and minutes on the left, seconds on the right
   lcd.dispDec(rtc.getHours() * 100 + rtc.getMinutes(), 0);
-  lcd.dispDec(rtc.getSeconds(), 1);
+  lcd.dispDec(rtc.getSeconds() * 100 + battLvl, 1);
 
   // if menuInt() ISR is called, pull up menu and run chosen main program
   if (menuActive) {
@@ -502,5 +596,4 @@ void loop() {
     attachInterrupt(btn3, menuInt, FALLING); // reattach interrupt to resume normal button function in main()
     menuActive = false; // reset menuActive to false
   }
-  
 }

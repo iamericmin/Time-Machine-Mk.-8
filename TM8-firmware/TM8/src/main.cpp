@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <RTCZero.h>
 #include <Adafruit_MAX1704X.h>
+#include <LowPower.h>
+#include <SparkFunLIS3DH.h>
 
 #define INACTIVITY_TIMEOUT 2000 // inactivity threshold of 2 seconds
 #define BUTTON_DELAY 200 // delay between button readings for switching between programs
@@ -16,6 +18,10 @@ CDM4101 lcd; // LCD object
 RTCZero rtc; // RTC object
 
 Adafruit_MAX17048 fuel;
+
+LowPowerClass lowpower;
+
+LIS3DH accel;
 
 const uint8_t btn1 = 2; // top left button
 const uint8_t btn2 = 38; // bottom left button
@@ -43,8 +49,8 @@ char mainPrograms[7][5] = {"quit", "Chro", "data", "Adju", "Prty", "Race", "Flsh
 
 // RTC time variables
 uint8_t seconds = 0;
-uint8_t minutes = 29;
-uint8_t hours = 12;
+uint8_t minutes = 0;
+uint8_t hours = 0;
 
 /*
 Main menu interrupt handler.
@@ -296,9 +302,10 @@ uint32_t chronoSplits[10]; // 10-long split record
 BTN4: start/stop chronograph
 BTN3: record split. stops after all 10 slots are filled. record slot shown on rightmost digit.
 BTN1: show time. Frequent use hampers precision.
+Not using any interrupts to record splits cuz that caused problems where it would immediately record an interrupt
+right when the chrono started. same for race chrono.
 */
 bool chronoGraph() {
-  attachInterrupt(btn3, recordSplitInt, FALLING);
   uint8_t chronoSplitsCounter = 0;
   while(readBtn4) { // start when button 4 is pressed
     lcd.dispStr("btn4", 0);
@@ -320,10 +327,9 @@ bool chronoGraph() {
     chronoMinutes %= 60; // compute elapsed minutes
     lcd.dispDec(chronoMinutes * 100 + chronoSeconds, 0); // display elapsed time on LCD
     lcd.dispDec(chronoMillis * 10 + chronoSplitsCounter, 1); // display elapsed milliseconds + split record slot on the right
-    if (splitActive && chronoSplitsCounter < 10 && !readBtn4) { // if button 3 is pressed and split record space is available. The last !readBtn4 is needed cuz for some reason without it, the while loop immediately gets triggered as the chrono starts
+    if (!digitalRead(btn3) && chronoSplitsCounter < 10) { // if button 3 is pressed and split record space is available
       while(!digitalRead(btn3)) {digitalWrite(led5, 1);} // show split time & light up LED5 while btn3 is depressed
       digitalWrite(led5, 0); // turn off LED5
-      splitActive = false; // reset split record ISR trigger bool
       lcd.dispDec(chronoMinutes * 100 + chronoSeconds, 0); // display split time
       lcd.dispDec(chronoMillis * 10 + chronoSplitsCounter, 1);
       chronoSplits[chronoSplitsCounter] = chronoMinutes * 100000 + chronoSeconds * 1000 + chronoMillis;
@@ -331,12 +337,19 @@ bool chronoGraph() {
       Serial.println(chronoSplitsCounter);
       chronoSplitsCounter++; // increment chronoSplitsCounter
     }
-    if (!digitalRead(btn1)) {
+    if (!digitalRead(btn1)) { // if btn1 is pressed
       while(!digitalRead(btn1)) {
-        lcd.dispDec(rtc.getHours() * 100 + rtc.getMinutes(), 0);
+        lcd.dispDec(rtc.getHours() * 100 + rtc.getMinutes(), 0); // display current time
         lcd.dispDec(rtc.getSeconds(), 1);
       }
     }
+    // if (!readBtn4) {
+    //   uint32_t millisBuffer = millis();
+    //   lcd.dispDec(chronoMinutes * 100 + chronoSeconds, 0); // display stopped chrono time
+    //   lcd.dispDec(chronoMillis * 10 + chronoSplitsCounter, 1);
+    //   while(readBtn4) {};
+    //   chronoStartTime = chronoStartTime - millisBuffer;
+    // }
   }
   // quit chronograph animation
   delay(1000);
@@ -351,7 +364,6 @@ bool chronoGraph() {
     lcd.dispStr("", 1);
     delay(75);
   }
-  detachInterrupt(btn3); // detatch temporary btn3 ISR used for chronograph
   return 0;
 }
 
@@ -371,10 +383,12 @@ uint8_t trackSelection = 0;
 
 /*
 Race chronograph. In addition to all features in the regular chronograph,
-also shows average speed per split and 
+also shows average speed per split.
+Can only measure up to 9"59.999
+100-deep split record
 */
 bool raceChrono() {
-  splitActive = false;
+  uint8_t raceSplitsCounter = 0;
   while (readBtn4) {
     lcd.dispStr("trck", 0);
     lcd.dispStr(tracks[trackSelection], 1);
@@ -389,10 +403,8 @@ bool raceChrono() {
       delay(200);
     }
   } while(!readBtn4); // start on rising edge to prevent split recording immediately
-  delay(200);
   uint16_t distance = distances[trackSelection];
-  attachInterrupt(btn3, recordSplitInt, FALLING);
-  uint8_t raceSplitsCounter = 0;
+  delay(200);
   while(readBtn4) { // start when button 4 is pressed
     lcd.dispStr("btn4", 0);
     lcd.dispStr("strt", 1);
@@ -413,7 +425,7 @@ bool raceChrono() {
     raceMinutes %= 60; // compute elapsed minutes
     lcd.dispDec(raceMinutes * 100 + raceSeconds, 0); // display elapsed time on LCD
     lcd.dispDec(raceMillis * 10 + raceSplitsCounter, 1); // display elapsed milliseconds + split record slot on the right
-    if (splitActive && raceSplitsCounter < 100 && !readBtn4) { // if button 3 is pressed and split record space is available. The last !readBtn4 is needed cuz for some reason without it, the while loop immediately gets triggered as the chrono starts
+    if (!digitalRead(btn3) && raceSplitsCounter < 100) { // if button 3 is pressed and split record space is available.
       while(!digitalRead(btn3)) {
         digitalWrite(led5, 1); // show split time & light up LED5 while btn3 is depressed
         lcd.dispDec(raceMinutes * 100 + raceSeconds, 0); // display split time
@@ -423,7 +435,6 @@ bool raceChrono() {
       float vavg = (distances[trackSelection]) / (float)((float)(millis() - raceStartTime) / 1000 / 3600);
       lcd.dispDec((int)(vavg), 0);
       lcd.dispDec(((vavg - (int)(vavg)) * 100), 1);
-      splitActive = false; // reset split record ISR trigger bool
       raceSplits[raceSplitsCounter] = raceMinutes * 100000 + raceSeconds * 1000 + raceMillis;
       raceSplitsCounter++; // increment raceSplitsCounter
       delay(2000);
@@ -448,7 +459,6 @@ bool raceChrono() {
     lcd.dispStr("", 1);
     delay(75);
   }
-  detachInterrupt(btn3); // detatch temporary btn3 ISR used for race chronograph
   return 0;
 }
 
@@ -460,32 +470,51 @@ user selects btn1 for chrono, btn3 for race
 uint8_t chronoData() {
   lcd.dispStr("chro", 0); // prompt choice
   lcd.dispStr("race", 1);
-  uint8_t recCounter = 0;
+  uint8_t chronoCounter = 0;
+  uint8_t raceCounter = 0;
   while (digitalRead(btn1) && digitalRead(btn3)); // wait for either btn1 or btn3 input
   if (!digitalRead(btn1)) { // if chrono records selected
     delay(225);
     while(readBtn4) {
-      lcd.dispDec(chronoSplits[recCounter] / 1000, 0);
-      lcd.dispDec((chronoSplits[recCounter] % 1000) * 10 + recCounter, 1);
+      lcd.dispDec(chronoSplits[chronoCounter] / 1000, 0);
+      lcd.dispDec((chronoSplits[chronoCounter] % 1000) * 10 + chronoCounter, 1);
       if (!digitalRead(btn3)) {
-        recCounter++;
-        if (recCounter > 9) {
-          recCounter = 0;
+        chronoCounter++;
+        if (chronoCounter > 9) {
+          chronoCounter = 0;
         }
-        Serial.print(chronoSplits[recCounter]);
+        Serial.print(chronoSplits[chronoCounter]);
         delay(200);
-      }
-      else if (!digitalRead(btn1)) {
-        recCounter--;
-        if (recCounter > 9) {
-          recCounter = 9;
+      } else if (!digitalRead(btn1)) {
+        chronoCounter--;
+        if (chronoCounter > 9) {
+          chronoCounter = 9;
         }
-        Serial.print(chronoSplits[recCounter]);
+        Serial.print(chronoSplits[chronoCounter]);
         delay(200);
       }
     }
   } else if (!digitalRead(btn3)) { // if race records selected
-    return 0;
+    delay(255);
+    while(readBtn4) {
+      lcd.dispDec(raceSplits[raceCounter] / 100, 0);
+      lcd.dispDec((raceSplits[raceCounter] % 100) * 100 + raceCounter, 1);
+      if (!digitalRead(btn3)) {
+        raceCounter++;
+        if (raceCounter > 99) {
+          raceCounter = 0;
+        }
+        Serial.print(raceSplits[raceCounter]);
+        delay(200);
+      } else if (!digitalRead(btn1)) {
+        raceCounter--;
+        if (raceCounter > 99) {
+          raceCounter = 99;
+        }
+        Serial.print(raceSplits[raceCounter]);
+        delay(150);
+      }
+    }
   }
   return 0;
 }
@@ -494,7 +523,55 @@ uint8_t chronoData() {
 Party mode.
 Watch flashes custom messages and LEDs
 */
-void party() {
+uint8_t party() {
+  uint8_t cnt = 0;
+  while(digitalRead(btn3)) {
+    if (cnt) {
+      delay(200);
+      lcd.dispStr("Cybr", 0);
+      lcd.dispStr("punk", 1);
+    } else {
+      delay(200);
+      lcd.dispStr("Hyun", 0);
+      lcd.dispStr("dai ", 1);
+    }
+    if (!readBtn4) {
+      lcd.dispStr("", 0);
+      lcd.dispStr("", 1);
+      delay(5000);
+      animTach();
+    }
+    if (!digitalRead(btn2)) {
+      cnt = !cnt;
+    }
+    if (!digitalRead(btn1)) {
+      lcd.dispStr("", 0);
+      lcd.dispStr("", 1);
+      delay(5000);
+      animTach();
+      for (int i=0; i<5; i++) {
+        lcd.dispStr("N vi", 0);
+        lcd.dispStr("sion", 1);
+        delay(133);
+        lcd.dispStr("", 0);
+        lcd.dispStr("", 1);
+        delay(133);
+      }
+      for (int i=0; i<5; i++) {
+        lcd.dispStr(" 74 ", 0);
+        lcd.dispStr(" 74 ", 1);
+        delay(133);
+        lcd.dispStr("", 0);
+        lcd.dispStr("", 1);
+        delay(133);
+      }
+      lcd.dispStr(" 74 ", 0);
+      lcd.dispStr(" 74 ", 1);
+      delay(1000);
+      return 0;
+    }
+  }
+  return 0;
 }
 
 void flashLight() {
@@ -593,8 +670,8 @@ void setup() {
   Wire.begin();
   wire1.begin();
 
-  pinPeripheral(4, PIO_SERCOM_ALT); // SDA: D4 / PA08
-  pinPeripheral(3, PIO_SERCOM_ALT); // SCL: D3 / PA09
+  pinPeripheral(4, PIO_SERCOM); // SDA: D4 / PA08
+  pinPeripheral(3, PIO_SERCOM); // SCL: D3 / PA09
 
   // enable pullups on all inputs to prevent floating
   pinMode(btn1, INPUT_PULLUP); // button 1, top left
@@ -615,26 +692,46 @@ void setup() {
   // leading to systemw-wide clock delays
   attachInterrupt(btn3, menuInt, FALLING);
 
-  Serial.begin(115200); // for debug reasons
-
   fuel.begin(); // initialize MAX17048
+  accel.begin();
 
   //bootUpSitRep();
 }
 
+bool state = false;
+uint8_t readCheck;
+
 // main function
 void loop() {
-  uint8_t battLvl = (uint8_t) fuel.cellPercent();
-  if (battLvl > 99) battLvl = 99;
 
-  // LCD displays hours and minutes on the left, seconds on the right
-  lcd.dispDec(rtc.getHours() * 100 + rtc.getMinutes(), 0);
-  lcd.dispDec(rtc.getSeconds() * 100 + battLvl, 1);
+  int xAxis = round(accel.readFloatAccelX() * 10);
+  int yAxis = round(accel.readFloatAccelY() * 10);
+  int zAxis = round(accel.readFloatAccelZ() * 10);
 
-  // if menuInt() ISR is called, pull up menu and run chosen main program
-  if (menuActive) {
-    runMainProgram(mainMenu());
-    attachInterrupt(btn3, menuInt, FALLING); // reattach interrupt to resume normal button function in main()
-    menuActive = false; // reset menuActive to false
-  }
+  // Serial.println("=================");
+  // Serial.println(xAxis);
+  // Serial.println(yAxis);
+  // Serial.println(zAxis);  
+
+  //uint16_t xyAxis = abs(xAxis) * 100 + abs(yAxis);
+
+  lcd.dispDec(xAxis, 0);
+  lcd.dispDec(yAxis, 1);
+
+  delay(500);
+  
+
+  // uint8_t battLvl = (uint8_t) fuel.cellPercent();
+  // if (battLvl > 99) battLvl = 99;
+
+  // // LCD displays hours and minutes on the left, seconds on the right
+  // lcd.dispDec(rtc.getHours() * 100 + rtc.getMinutes(), 0);
+  // lcd.dispDec(rtc.getSeconds() * 100 + battLvl, 1);
+
+  // // if menuInt() ISR is called, pull up menu and run chosen main program
+  // if (menuActive) {
+  //   runMainProgram(mainMenu());
+  //   attachInterrupt(btn3, menuInt, FALLING); // reattach interrupt to resume normal button function in main()
+  //   menuActive = false; // reset menuActive to false
+  // }
 }

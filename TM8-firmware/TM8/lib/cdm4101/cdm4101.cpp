@@ -57,7 +57,7 @@ static uint8_t Segs[] =
 	0x3A, // H
 	0x03, // I
 	0x0F, // J
-	0x7A, // K - can't do
+	0x3B, // K - can't do
 	0x2C, // L
 	0x5A, // M - can't do
 	0x1A, // n
@@ -69,7 +69,7 @@ static uint8_t Segs[] =
 	0x3C, // t
 	0x0E, // u
 	0x2F, // V
-	0x4E, // W
+	0x35, // W
 	0x2B, // X
 	0x37, // y
 	0x5D, // Z

@@ -21,7 +21,7 @@ Adafruit_MAX17048 fuel;
 
 LowPowerClass lowpower;
 
-LIS3DH accel;
+LIS3DH accel(I2C_MODE, 0x18);
 
 const uint8_t btn1 = 2; // top left button
 const uint8_t btn2 = 38; // bottom left button
@@ -528,12 +528,12 @@ uint8_t party() {
   while(digitalRead(btn3)) {
     if (cnt) {
       delay(200);
-      lcd.dispStr("Cybr", 0);
-      lcd.dispStr("punk", 1);
+      lcd.dispStr(" lan", 0);
+      lcd.dispStr("cia ", 1);
     } else {
       delay(200);
-      lcd.dispStr("Hyun", 0);
-      lcd.dispStr("dai ", 1);
+      lcd.dispStr(" ral", 0);
+      lcd.dispStr("ly  ", 1);
     }
     if (!readBtn4) {
       lcd.dispStr("", 0);
@@ -695,7 +695,7 @@ void setup() {
   fuel.begin(); // initialize MAX17048
   accel.begin();
 
-  //bootUpSitRep();
+  bootUpSitRep();
 }
 
 bool state = false;
@@ -708,17 +708,15 @@ void loop() {
   int yAxis = round(accel.readFloatAccelY() * 10);
   int zAxis = round(accel.readFloatAccelZ() * 10);
 
-  // Serial.println("=================");
-  // Serial.println(xAxis);
-  // Serial.println(yAxis);
-  // Serial.println(zAxis);  
-
-  //uint16_t xyAxis = abs(xAxis) * 100 + abs(yAxis);
+  Serial.println("=================");
+  Serial.println(xAxis);
+  Serial.println(yAxis);
+  Serial.println(zAxis);
 
   lcd.dispDec(xAxis, 0);
   lcd.dispDec(yAxis, 1);
 
-  delay(500);
+  delay(100);
   
 
   // uint8_t battLvl = (uint8_t) fuel.cellPercent();
@@ -728,10 +726,10 @@ void loop() {
   // lcd.dispDec(rtc.getHours() * 100 + rtc.getMinutes(), 0);
   // lcd.dispDec(rtc.getSeconds() * 100 + battLvl, 1);
 
-  // // if menuInt() ISR is called, pull up menu and run chosen main program
-  // if (menuActive) {
-  //   runMainProgram(mainMenu());
-  //   attachInterrupt(btn3, menuInt, FALLING); // reattach interrupt to resume normal button function in main()
-  //   menuActive = false; // reset menuActive to false
-  // }
+  //if menuInt() ISR is called, pull up menu and run chosen main program
+  if (menuActive) {
+    runMainProgram(mainMenu());
+    attachInterrupt(btn3, menuInt, FALLING); // reattach interrupt to resume normal button function in main()
+    menuActive = false; // reset menuActive to false
+  }
 }

@@ -11,7 +11,7 @@
 #include "cdm4101.h"
 
 //----------------------------------------------------------------------------
-TwoWire bus2(&sercom2, 4, 3); //set up second I2C bus
+TwoWire lcdBus2(&sercom2, 4, 3); //set up second I2C bus
 
 #define I2C_ADDR	(0x38) //hard-wired I2C address of LCD
 
@@ -117,15 +117,15 @@ void CDM4101::Update(bool disp) // if disp is 0, left LCD. if 1, right LCD.
 
     Wire.endTransmission();
   } else if (disp) {
-    bus2.beginTransmission(I2C_ADDR);
-    bus2.write(CMD_MODE_SET);
-    bus2.write(CMD_LOAD_DP);
-    bus2.write(CMD_DEVICE_SEL);
-    bus2.write(CMD_BANK_SEL);
+    lcdBus2.beginTransmission(I2C_ADDR);
+    lcdBus2.write(CMD_MODE_SET);
+    lcdBus2.write(CMD_LOAD_DP);
+    lcdBus2.write(CMD_DEVICE_SEL);
+    lcdBus2.write(CMD_BANK_SEL);
 
 
-    if(Blink) bus2.write(CMD_BLINK);
-    else      bus2.write(CMD_NOBLINK);
+    if(Blink) lcdBus2.write(CMD_BLINK);
+    else      lcdBus2.write(CMD_NOBLINK);
 
   #if 1
     data[0] = (Digits[0] >> 4); // || LCD_BAR
@@ -134,16 +134,16 @@ void CDM4101::Update(bool disp) // if disp is 0, left LCD. if 1, right LCD.
     data[3] = (Digits[2] << 6) | (Digits[3] >> 1);
     data[4] = (Digits[3] << 7);
   #else
-    bus2.write(0x70);
-    bus2.write(0x3B);
-    bus2.write(0xB5);
-    bus2.write(0xD9);
-    bus2.write(0x80);
+    lcdBus2.write(0x70);
+    lcdBus2.write(0x3B);
+    lcdBus2.write(0xB5);
+    lcdBus2.write(0xD9);
+    lcdBus2.write(0x80);
   #endif
 
-    for(int i=0;i<5;i++) bus2.write(data[i]);
+    for(int i=0;i<5;i++) lcdBus2.write(data[i]);
 
-    bus2.endTransmission();
+    lcdBus2.endTransmission();
   }
 }
 
@@ -172,19 +172,19 @@ void CDM4101::init_lcd(void)
 
 	Wire.endTransmission();
   
-	bus2.beginTransmission(I2C_ADDR);
-	bus2.write(CMD_MODE_SET);
-	bus2.write(CMD_LOAD_DP);
-	bus2.write(CMD_DEVICE_SEL);
-	bus2.write(CMD_BANK_SEL);
-	bus2.write(CMD_NOBLINK);
-	bus2.write(0x05);
-	bus2.write(0xD5);
-	bus2.write(0x9B);
-	bus2.write(0xFF);
-	bus2.write(0x00);
+	lcdBus2.beginTransmission(I2C_ADDR);
+	lcdBus2.write(CMD_MODE_SET);
+	lcdBus2.write(CMD_LOAD_DP);
+	lcdBus2.write(CMD_DEVICE_SEL);
+	lcdBus2.write(CMD_BANK_SEL);
+	lcdBus2.write(CMD_NOBLINK);
+	lcdBus2.write(0x05);
+	lcdBus2.write(0xD5);
+	lcdBus2.write(0x9B);
+	lcdBus2.write(0xFF);
+	lcdBus2.write(0x00);
 
-	bus2.endTransmission();
+	lcdBus2.endTransmission();
 
 	Ctr = 0;
 }

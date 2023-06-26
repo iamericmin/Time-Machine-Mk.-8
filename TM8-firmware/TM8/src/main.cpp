@@ -715,7 +715,7 @@ uint8_t starter() {
       if (!digitalRead(btn3)) {
         while(!digitalRead(btn3)) {
           cnt++;
-          tone(9, 1.25 * cnt + 200);
+          tone(9, cnt * 25);
           uint8_t graph = cnt / 40;
           switch (graph) {
             case 0:
@@ -774,7 +774,7 @@ uint8_t starter() {
       } else {
         while(digitalRead(btn3) && cnt > 0) {
           cnt--;
-          tone(9, 1.25 * cnt + 200);
+          tone(9, cnt * 25);
           uint8_t graph = cnt / 50;
           switch (graph) {
             case 0:
@@ -882,38 +882,32 @@ void setup() {
 // main function
 void loop() {
 
-  // for (int i=0; i<5; i++) {
-  //   int freq = (random(0, 7) + 2) * 1000;
-  //   tone(9, freq, 200);
-  // }
-  // delay(3000);
+  int xAxis = round(accel.readFloatAccelX() * 10);
+  int yAxis = round(accel.readFloatAccelY() * 10);
+  int zAxis = round(accel.readFloatAccelZ() * 10);
 
-  // int xAxis = round(accel.readFloatAccelX() * 10);
-  // int yAxis = round(accel.readFloatAccelY() * 10);
-  // int zAxis = round(accel.readFloatAccelZ() * 10);
+  Serial.println("=================");
+  Serial.println(xAxis);
+  Serial.println(yAxis);
+  Serial.println(zAxis);
 
-  // Serial.println("=================");
-  // Serial.println(xAxis);
-  // Serial.println(yAxis);
-  // Serial.println(zAxis);
+  lcd.dispDec(xAxis, 0);
+  lcd.dispDec(yAxis, 1);
 
-  // lcd.dispDec(xAxis, 0);
-  // lcd.dispDec(yAxis, 1);
-
-  // delay(100);
+  delay(100);
   
 
-  uint8_t battLvl = (uint8_t) fuel.cellPercent();
-  if (battLvl > 99) battLvl = 99;
+  // uint8_t battLvl = (uint8_t) fuel.cellPercent();
+  // if (battLvl > 99) battLvl = 99;
 
-  // LCD displays hours and minutes on the left, seconds on the right
-  lcd.dispDec(rtc.getHours() * 100 + rtc.getMinutes(), 0);
-  lcd.dispDec(rtc.getSeconds() * 100 + battLvl, 1);
+  // // LCD displays hours and minutes on the left, seconds on the right
+  // lcd.dispDec(rtc.getHours() * 100 + rtc.getMinutes(), 0);
+  // lcd.dispDec(rtc.getSeconds() * 100 + battLvl, 1);
 
-  //if menuInt() ISR is called, pull up menu and run chosen main program
-  if (menuActive) {
-    runMainProgram(mainMenu());
-    attachInterrupt(btn3, menuInt, FALLING); // reattach interrupt to resume normal button function in main()
-    menuActive = false; // reset menuActive to false
-  }
+  // //if menuInt() ISR is called, pull up menu and run chosen main program
+  // if (menuActive) {
+  //   runMainProgram(mainMenu());
+  //   attachInterrupt(btn3, menuInt, FALLING); // reattach interrupt to resume normal button function in main()
+  //   menuActive = false; // reset menuActive to false
+  // }
 }

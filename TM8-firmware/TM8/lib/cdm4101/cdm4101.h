@@ -23,7 +23,7 @@ public:
 	void init_lcd(void);
 	void Command(uint8_t cmd, bool disp);
 	void dispChar(uint8_t index, char c, bool disp);
-  void dispCharRaw(uint8_t index, char, bool disp);
+  void dispCharRaw(uint8_t index, char c, bool disp);
 	void dispStr(char *s, bool disp);
 	void dispStrTimed(char *s, bool disp);
 	void dispDec(short n, bool disp);

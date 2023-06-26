@@ -69,6 +69,19 @@ void recordSplitInt() {
 
 // hex array for tachometer animation frames
 uint8_t tachInit[7] = {0x00, 0x04, 0x0C, 0x2C, 0x6C, 0x6D, 0x6F};
+uint8_t swipeDown[10] = {0x40, 0x61, 0x71, 0x7B, 0x7F, 0x3F, 0x1E, 0x0E, 0x04, 0x00};
+
+// "swipe down" animatin
+void animSwipeDown(uint8_t animDelay) {
+  for (int i=0; i<10; i++) {
+    for (int d=0; d<4; d++) {
+      lcd.Digits[d] = swipeDown[i];
+    }
+    lcd.Update(0);
+    lcd.Update(1);
+    delay(animDelay);
+  }
+}
 
 // animation mimicking tachometer start-up on vintage cars
 void animTach() {
@@ -84,7 +97,7 @@ void animTach() {
   }
   for (int i=0; i<7; i++) { // for each frame of tachInit[] animation
     for (int d=0; d<4; d++) { // display on all digits
-      lcd.Digits[d] = tachInit[i];
+      lcd.Digits[d] = tachInit[i]; 
     }
     lcd.Update(0); // update both LCDs
     lcd.Update(1);
@@ -113,13 +126,16 @@ void animTach() {
 void blinkGo() {
   for (int i=0; i<5; i++) {
     lcd.dispStr("    ", 1);
+    noTone(9);
     delay(30);
     for (int i=0; i<4; i++) {
       lcd.dispCharRaw(i, 0x54, 1);
     }
+    tone(9, 4000);
     delay(30);
   }
   lcd.dispStr(" GO ", 1);
+  noTone(9);
 }
 
 /*
@@ -173,15 +189,19 @@ void bootUpSitRep() {
   if (deviceCount == 5) { // if all devices detected
     lcd.dispStr("", 1);
     lcd.dispStr("All ", 0);
+    tone(9, 2000, 100);
     delay(500);
     lcd.dispStr("Syst", 0);
     lcd.dispStr("ems", 1);
+    tone(9, 2000, 100);
     delay(500);
     lcd.dispStr("", 1);
     for (int i=0; i<7; i++) {
       lcd.dispStr(" GO ", 0);
+      tone(9, 4000);
       delay(75);
       lcd.dispStr("", 0);
+      noTone(9);
       delay(75);
     }
   } else { // if a different number of devices detected
@@ -528,12 +548,12 @@ uint8_t party() {
   while(digitalRead(btn3)) {
     if (cnt) {
       delay(200);
-      lcd.dispStr(" lan", 0);
-      lcd.dispStr("cia ", 1);
+      lcd.dispStr("OVTA", 0);
+      lcd.dispStr("TIME", 1);
     } else {
       delay(200);
-      lcd.dispStr(" ral", 0);
-      lcd.dispStr("ly  ", 1);
+      lcd.dispStr(" PAS", 0);
+      lcd.dispStr("SION", 1);
     }
     if (!readBtn4) {
       lcd.dispStr("", 0);
@@ -575,7 +595,20 @@ uint8_t party() {
 }
 
 void flashLight() {
-
+  bool flash = 0;
+  lcd.dispStr("", 0);
+  lcd.dispStr("", 1);
+  while(digitalRead(btn1)) {
+    if (!readBtn4) {
+      flash = !flash;
+      delay(250);
+    }
+    if (!digitalRead(btn3)) {
+      digitalWrite(6, !digitalRead(btn3));
+    }
+    digitalWrite(6, flash);
+  }
+  digitalWrite(6, 0);
 }
 
 /*
@@ -600,8 +633,14 @@ uint8_t mainMenu() {
       }
       delay(BUTTON_DELAY); // short delay to prevent crazy fast scrolling
       startTime = millis(); // reset timer to 0 to extend time
-    }
-    if (!readBtn4) { // if button 4 (bottom right) is pressed
+    } else if (!digitalRead(btn1)) { // if button 1 (top left) is pressed
+      mainProgramNumber--; // increment main program counter and select next program
+      if (mainProgramNumber >= NUM_MAIN_PROGRAMS) { // roll back to program 0 after going through entire list
+        mainProgramNumber = NUM_MAIN_PROGRAMS - 1;
+      }
+      delay(BUTTON_DELAY); // short delay to prevent crazy fast scrolling
+      startTime = millis(); // reset timer to 0 to extend time
+    } else if (!readBtn4) { // if button 4 (bottom right) is pressed
       for (int i=0; i<3; i++) { // blink selected program 3 times on the display
         lcd.dispStr("", 0);
         lcd.dispStr("", 1);
@@ -653,11 +692,142 @@ void runMainProgram(uint8_t prog) {
   }
 }
 
+uint8_t starter() {
+  for (int i=0; i<3; i++) {
+    animSwipeDown(30);
+  }
+
+  uint8_t battLvl = (uint8_t) fuel.cellPercent();
+  if (battLvl > 99) battLvl = 99;
+  if (battLvl <= 10 && battLvl >= 0) {
+    for (int i=0; i<3; i++) {
+      lcd.dispStr(" NO ", 0);
+      lcd.dispStr("FUEL", 1);
+      delay(300);
+      lcd.dispStr("", 0);
+      lcd.dispStr("", 1);
+      delay(300);
+    }
+  }
+  uint16_t cnt = 0;
+  while(1) {
+    if (!digitalRead(btn1)) {
+      if (!digitalRead(btn3)) {
+        while(!digitalRead(btn3)) {
+          cnt++;
+          tone(9, 1.25 * cnt + 200);
+          uint8_t graph = cnt / 40;
+          switch (graph) {
+            case 0:
+              lcd.dispStr("", 0);
+              lcd.dispStr("", 1);
+              break;
+            case 1:
+              lcd.dispStr("8", 0);
+              lcd.dispStr("", 1);
+              break;
+            case 2:
+              lcd.dispStr("88", 0);
+              lcd.dispStr("", 1);
+              break;
+            case 3:
+              lcd.dispStr("888", 0);
+              lcd.dispStr("", 1);
+              break;
+            case 4:
+              lcd.dispStr("8888", 0);
+              lcd.dispStr("", 1);
+              break;
+            case 5:
+              lcd.dispStr("8888", 0);
+              lcd.dispStr("8", 1);
+              break;
+            case 6:
+              lcd.dispStr("8888", 0);
+              lcd.dispStr("88", 1);
+              break;
+            case 7:
+              lcd.dispStr("8888", 0);
+              lcd.dispStr("888", 1);
+              break;
+            case 8:
+              lcd.dispStr("8888", 0);
+              lcd.dispStr("8888", 1);
+              break;
+          }
+          if (cnt == 320) {
+            delay(50);
+            for (int i=0; i<5; i++) {
+              lcd.dispStr("8888", 0);
+              lcd.dispStr("8888", 1);
+              tone(9, 4000);
+              delay(60);
+              lcd.dispStr("", 0);
+              lcd.dispStr("", 1);
+              noTone(9);
+              delay(60);
+            }
+            noTone(9);
+            return 0;
+          }
+        }
+      } else {
+        while(digitalRead(btn3) && cnt > 0) {
+          cnt--;
+          tone(9, 1.25 * cnt + 200);
+          uint8_t graph = cnt / 50;
+          switch (graph) {
+            case 0:
+              lcd.dispStr("", 0);
+              lcd.dispStr("", 1);
+              break;
+            case 1:
+              lcd.dispStr("8", 0);
+              lcd.dispStr("", 1);
+              break;
+            case 2:
+              lcd.dispStr("88", 0);
+              lcd.dispStr("", 1);
+              break;
+            case 3:
+              lcd.dispStr("888", 0);
+              lcd.dispStr("", 1);
+              break;
+            case 4:
+              lcd.dispStr("8888", 0);
+              lcd.dispStr("", 1);
+              break;
+            case 5:
+              lcd.dispStr("8888", 0);
+              lcd.dispStr("8", 1);
+              break;
+            case 6:
+              lcd.dispStr("8888", 0);
+              lcd.dispStr("88", 1);
+              break;
+            case 7:
+              lcd.dispStr("8888", 0);
+              lcd.dispStr("888", 1);
+              break;
+            case 8:
+              lcd.dispStr("8888", 0);
+              lcd.dispStr("8888", 1);
+              break;
+          }
+        }
+      }
+    }
+    if (digitalRead(btn3) && cnt == 0) {
+      lcd.dispCharRaw(0, 0x7F, 0);
+      delay(50);
+      lcd.dispCharRaw(0, 0x00, 0);
+      delay(50);
+    }
+  }
+}
+
 // system initialization
 void setup() {
-
-  // initialize LCDs
-  lcd.init_lcd();
 
   rtc.begin(); // fire up RTC
 
@@ -665,6 +835,9 @@ void setup() {
   rtc.setHours(hours);
   rtc.setMinutes(minutes);
   rtc.setSeconds(seconds);
+
+  // initialize LCDs
+  lcd.init_lcd();
 
   // start both I2C buses
   Wire.begin();
@@ -677,6 +850,9 @@ void setup() {
   pinMode(btn1, INPUT_PULLUP); // button 1, top left
   pinMode(btn2, INPUT_PULLUP); // button 2, bottom left
   pinMode(btn3, INPUT_PULLUP); // button 3, top right
+
+  pinMode(6, OUTPUT); // flashlight
+  pinMode(9, OUTPUT); // piezo
 
   for (int i=0; i<5; i++) {
     pinMode(leds[i], OUTPUT);
@@ -692,39 +868,47 @@ void setup() {
   // leading to systemw-wide clock delays
   attachInterrupt(btn3, menuInt, FALLING);
 
+  
+
   fuel.begin(); // initialize MAX17048
   accel.begin();
 
+  starter();
   bootUpSitRep();
-}
+  menuActive = false; // for some reason starter() triggers menuInt(), so I need this to prevent the watch from booting straight into the menu
 
-bool state = false;
-uint8_t readCheck;
+}
 
 // main function
 void loop() {
 
-  int xAxis = round(accel.readFloatAccelX() * 10);
-  int yAxis = round(accel.readFloatAccelY() * 10);
-  int zAxis = round(accel.readFloatAccelZ() * 10);
+  // for (int i=0; i<5; i++) {
+  //   int freq = (random(0, 7) + 2) * 1000;
+  //   tone(9, freq, 200);
+  // }
+  // delay(3000);
 
-  Serial.println("=================");
-  Serial.println(xAxis);
-  Serial.println(yAxis);
-  Serial.println(zAxis);
+  // int xAxis = round(accel.readFloatAccelX() * 10);
+  // int yAxis = round(accel.readFloatAccelY() * 10);
+  // int zAxis = round(accel.readFloatAccelZ() * 10);
 
-  lcd.dispDec(xAxis, 0);
-  lcd.dispDec(yAxis, 1);
+  // Serial.println("=================");
+  // Serial.println(xAxis);
+  // Serial.println(yAxis);
+  // Serial.println(zAxis);
 
-  delay(100);
+  // lcd.dispDec(xAxis, 0);
+  // lcd.dispDec(yAxis, 1);
+
+  // delay(100);
   
 
-  // uint8_t battLvl = (uint8_t) fuel.cellPercent();
-  // if (battLvl > 99) battLvl = 99;
+  uint8_t battLvl = (uint8_t) fuel.cellPercent();
+  if (battLvl > 99) battLvl = 99;
 
-  // // LCD displays hours and minutes on the left, seconds on the right
-  // lcd.dispDec(rtc.getHours() * 100 + rtc.getMinutes(), 0);
-  // lcd.dispDec(rtc.getSeconds() * 100 + battLvl, 1);
+  // LCD displays hours and minutes on the left, seconds on the right
+  lcd.dispDec(rtc.getHours() * 100 + rtc.getMinutes(), 0);
+  lcd.dispDec(rtc.getSeconds() * 100 + battLvl, 1);
 
   //if menuInt() ISR is called, pull up menu and run chosen main program
   if (menuActive) {

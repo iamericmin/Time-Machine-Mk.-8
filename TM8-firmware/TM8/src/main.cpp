@@ -7,6 +7,7 @@
 #include <Adafruit_MAX1704X.h>
 #include <LowPower.h>
 #include <SparkFunLIS3DH.h>
+#include <bme68xLibrary.h>
 
 #define INACTIVITY_TIMEOUT 2000 // inactivity threshold of 2 seconds
 #define BUTTON_DELAY 200 // delay between button readings for switching between programs
@@ -22,6 +23,8 @@ Adafruit_MAX17048 fuel;
 LowPowerClass lowpower;
 
 LIS3DH accel(I2C_MODE, 0x18);
+
+Bme68x bme;
 
 const uint8_t btn1 = 2; // top left button
 const uint8_t btn2 = 38; // bottom left button
@@ -172,7 +175,7 @@ void bootUpSitRep() {
         lcd.dispStr("Accl", 0);
         blinkGo();
         delay(500);
-      } else if (address == 0x76) { // if BME680 environmental sensor detected on address 0x76
+      } else if (address == 0x76) { // if bme environmental sensor detected on address 0x76
         deviceCount++;
         lcd.dispStr("temp", 0);
         blinkGo();
@@ -692,6 +695,8 @@ void runMainProgram(uint8_t prog) {
   }
 }
 
+uint8_t firingOrder[] = {1, 5, 3, 7, 4, 8, 2, 6};
+
 uint8_t starter() {
   for (int i=0; i<3; i++) {
     animSwipeDown(30);
@@ -817,14 +822,54 @@ uint8_t starter() {
         }
       }
     }
+    //uint8_t firingOrder[] = {1, 5, 3, 7, 4, 8, 2, 6};
     if (digitalRead(btn3) && cnt == 0) {
-      lcd.dispCharRaw(0, 0x7F, 0);
-      delay(50);
-      lcd.dispCharRaw(0, 0x00, 0);
-      delay(50);
+      for (int i=0; i<8; i++) {
+        uint8_t index = firingOrder[i] - 1;
+        if (index >= 4) {
+          lcd.dispChar(index - 4, '-', 1);
+          delay(50);
+          lcd.dispChar(index - 4, 'K', 1);
+          delay(50);
+          lcd.dispChar(index - 4, '0', 1);
+          delay(50);
+          lcd.dispCharRaw(index - 4, 0x44, 1);
+          delay(50);
+          lcd.Command(CDM4101_CLEAR, 1);
+          delay(50);
+        } else {
+          lcd.dispChar(index, '-', 0);
+          delay(50);
+          lcd.dispChar(index, 'K', 0);
+          delay(50);
+          lcd.dispChar(index, '0', 0);
+          delay(50);
+          lcd.dispCharRaw(index, 0x44, 0);
+          delay(50);
+          lcd.Command(CDM4101_CLEAR, 0);
+          delay(50);
+        }
+      }
     }
   }
 }
+
+float altitude(const int32_t press, const float seaLevel = 1013.25);
+float altitude(const int32_t press, const float seaLevel) {
+  /*!
+  @brief     This converts a pressure measurement into a height in meters
+  @details   The corrected sea-level pressure can be passed into the function if it is known,
+             otherwise the standard atmospheric pressure of 1013.25hPa is used (see
+             https://en.wikipedia.org/wiki/Atmospheric_pressure) for details.
+  @param[in] press    Pressure reading from BME680
+  @param[in] seaLevel Sea-Level pressure in millibars
+  @return    floating point altitude in meters.
+  */
+  static float Altitude;
+  Altitude =
+      44330.0 * (1.0 - pow(((float)press / 100.0) / seaLevel, 0.1903));  // Convert into meters
+  return (Altitude);
+}  // of method altitude()
 
 // system initialization
 void setup() {
@@ -842,6 +887,9 @@ void setup() {
   // start both I2C buses
   Wire.begin();
   wire1.begin();
+
+  Wire.setClock(400000);
+  wire1.setClock(400000);
 
   pinPeripheral(4, PIO_SERCOM); // SDA: D4 / PA08
   pinPeripheral(3, PIO_SERCOM); // SCL: D3 / PA09
@@ -868,10 +916,27 @@ void setup() {
   // leading to systemw-wide clock delays
   attachInterrupt(btn3, menuInt, FALLING);
 
-  
-
   fuel.begin(); // initialize MAX17048
   accel.begin();
+  bme.begin(0x76, wire1);
+
+	if(bme.checkStatus())
+	{
+		if (bme.checkStatus() == BME68X_ERROR)
+		{
+			Serial.println("Sensor error:" + bme.statusString());
+			return;
+		}
+		else if (bme.checkStatus() == BME68X_WARNING)
+		{
+			Serial.println("Sensor Warning:" + bme.statusString());
+		}
+	}
+	/* Set the default configuration for temperature, pressure and humidity */
+	bme.setTPH();
+	/* Set the heater configuration to 300 deg C for 100ms for Forced mode */
+	bme.setHeaterProf(300, 100);
+	Serial.println("TimeStamp(ms), Temperature(deg C), Pressure(Pa), Humidity(%), Gas resistance(ohm), Status");
 
   starter();
   bootUpSitRep();
@@ -882,19 +947,33 @@ void setup() {
 // main function
 void loop() {
 
-  int xAxis = round(accel.readFloatAccelX() * 10);
-  int yAxis = round(accel.readFloatAccelY() * 10);
-  int zAxis = round(accel.readFloatAccelZ() * 10);
+	bme68xData data;
 
-  Serial.println("=================");
-  Serial.println(xAxis);
-  Serial.println(yAxis);
-  Serial.println(zAxis);
+	bme.setOpMode(BME68X_FORCED_MODE);
+	delayMicroseconds(bme.getMeasDur());
 
-  lcd.dispDec(xAxis, 0);
-  lcd.dispDec(yAxis, 1);
+	if (bme.fetchData())
+	{
+		bme.getData(data);
+    int temp = (int)data.temperature;
+    int hum = (int)data.humidity;
+		lcd.dispDec(temp, 0);
+    lcd.dispDec(hum, 1);
+		Serial.print(String(data.temperature) + ", ");
+		Serial.print(String(data.pressure) + ", ");
+		Serial.print(String(data.humidity) + ", ");
+		Serial.print(String(data.gas_resistance) + ", ");
+		Serial.println(data.status, HEX);
+	}
 
-  delay(100);
+  // int xAxis = round(accel.readFloatAccelX() * 10);
+  // int yAxis = round(accel.readFloatAccelY() * 10);
+  // int zAxis = round(accel.readFloatAccelZ() * 10);
+
+  // lcd.dispDec(xAxis, 0);
+  // lcd.dispDec(yAxis, 1);
+
+  // delay(100);
   
 
   // uint8_t battLvl = (uint8_t) fuel.cellPercent();

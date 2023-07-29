@@ -1,30 +1,46 @@
+/*
+ _______             __  ___         __   _            __  _____       ___ 
+/_  __(_)_ _  ___   /  |/  /__ _____/ /  (_)__  ___   /  |/  / /__    ( _ )
+ / / / /  ' \/ -_) / /|_/ / _ `/ __/ _ \/ / _ \/ -_) / /|_/ /  '_/   / _  |
+/_/ /_/_/_/_/\__/ /_/  /_/\_,_/\__/_//_/_/_//_/\__/ /_/  /_/_/\_(_)  \___/ 
+TIME MACHINE MK. 8
+MIN WORKS 2023
+@designedbyericmin
+
+GENERAL RULE OF THUMB:
+Button 1: top left. scroll up
+Button 2: buttom left. scroll down
+Button 3: top right. confirm/enter
+Button 4: top left. cancel/exit
+*/
+
 #include <Arduino.h>
 #include <Wire.h>
 #include "wiring_private.h" // pinPeripheral() function
 #include <cdm4101.h>
-#include <stdio.h>
 #include <RTCZero.h>
 #include <Adafruit_MAX1704X.h>
-#include <LowPower.h>
+#include <ArduinoLowPower.h>
 #include <SparkFunLIS3DH.h>
 #include <bme68xLibrary.h>
+#include <SparkFun_External_EEPROM.h>
+#include <time.h>
 
 #define INACTIVITY_TIMEOUT 2000 // inactivity threshold of 2 seconds
-#define BUTTON_DELAY 200 // delay between button readings for switching between programs
+#define BUTTON_DELAY 200 // delay between button readings for scrolling, long press, etc.
+#define LCD_ADDRESS 0x38
+#define FUEL_ADDRESS 0x36
+#define ACCEL_ADDRESS 0x18
+#define BME_ADDRESS 0x76
+#define ROM_ADDRESS 0x50
 
 TwoWire wire1(&sercom2, 4, 3); // new Wire object to set up second I2C port on SERCOM 2
-
 CDM4101 lcd; // LCD object
-
 RTCZero rtc; // RTC object
-
 Adafruit_MAX17048 fuel;
-
-LowPowerClass lowpower;
-
 LIS3DH accel(I2C_MODE, 0x18);
-
 Bme68x bme;
+ExternalEEPROM rom;
 
 const uint8_t btn1 = 2; // top left button
 const uint8_t btn2 = 38; // bottom left button
@@ -41,14 +57,14 @@ uint8_t leds[] = {7, A3, A1, 8, 5};
 
 bool menuActive = false; // main Menu ISR handler variable,
 // becomes true when main menu is opened and false when menu's over
-
 bool splitActive = false; // ISR handler variable for recording splits in chronograph
+
+bool dispMode = 1; // 0 for wakeToCheck, 1 for AOD
 
 // list of programs in main menu 8 elements long with each element 5 bytes (4 bytes + line end)
 // first program is "quit", gets called when mainMenu() quits from no activity. Returns to main() loop.
-char mainPrograms[7][5] = {"quit", "Chro", "data", "Adju", "Prty", "Race", "Flsh"};
-
-#define NUM_MAIN_PROGRAMS 7 // number of main programs
+char mainPrograms[9][5] = {"quit", "Chro", "data", "Adju", "conf", "sens", "Race", "Flsh", "game"};
+uint8_t numPrograms = sizeof(mainPrograms) / sizeof(mainPrograms[0]);
 
 // RTC time variables
 uint8_t seconds = 0;
@@ -126,7 +142,7 @@ void animTach() {
 }
 
 // simple animation for system check/bootup animation
-void blinkGo() {
+void blinkGo(bool isGo) {
   for (int i=0; i<5; i++) {
     lcd.dispStr("    ", 1);
     noTone(9);
@@ -134,60 +150,41 @@ void blinkGo() {
     for (int i=0; i<4; i++) {
       lcd.dispCharRaw(i, 0x54, 1);
     }
-    tone(9, 4000);
+    tone(9, random(1, 7) * 1000);
     delay(30);
   }
-  lcd.dispStr(" GO ", 1);
+  isGo ? lcd.dispStr(" GO ", 1) : lcd.dispStr("Err ", 1);
   noTone(9);
+  delay(500);
 }
 
 /*
 bootup animation. Scans all I2C buses and devices. Checks for response
 */
-void bootUpSitRep() {
+void sysCheck() {
   animTach(); // vintage tachometer animation
-  uint8_t error; // I2C error code
-  uint8_t address; // I2C device address
   uint8_t deviceCount = 0; // total number of devices detected. Increments with each device detected. Should be 5.
-  for(address = 1; address < 127; address++ ) {
-    Wire.beginTransmission(address); // start with first I2C bus
-    error = Wire.endTransmission();
-    if (error == 0) {
-      if (address == 0x36) { // if MAX17048 fuel gauge detected on address 0x36
-        deviceCount++;
-        lcd.dispStr("Fuel", 0);
-        blinkGo();
-        delay(500);
-      } else if (address == 0x38) { // if left LCD detected on address 0x38
-        deviceCount++;
-        lcd.dispStr("LCDl", 0);
-        blinkGo();
-        delay(500);
-      }
-    }
-  }
-  for(address = 1; address < 127; address++ ) {
-    wire1.beginTransmission(address); // scan second I2C bus
-    error = wire1.endTransmission();
-    if (error == 0) {
-      if (address == 0x18) { // if LIS3DH accelerometer detected on address 0x18
-        deviceCount++;
-        lcd.dispStr("Accl", 0);
-        blinkGo();
-        delay(500);
-      } else if (address == 0x76) { // if bme environmental sensor detected on address 0x76
-        deviceCount++;
-        lcd.dispStr("temp", 0);
-        blinkGo();
-        delay(500);
-      } else if (address == 0x38) { // if right LCD detected on address 0x38
-        deviceCount++;
-        lcd.dispStr("LCDr", 0);
-        blinkGo();
-        delay(500);
-      }
-    }
-  }
+
+  lcd.dispStr("LCDR", 0);
+  wire1.beginTransmission(LCD_ADDRESS);
+  blinkGo(!Wire.endTransmission()); deviceCount++;
+
+  lcd.dispStr("LCDL", 0);
+  Wire.beginTransmission(LCD_ADDRESS);
+  blinkGo(!wire1.endTransmission()); deviceCount++;
+
+  lcd.dispStr("FUEL", 0);
+  Wire.beginTransmission(FUEL_ADDRESS);
+  blinkGo(!Wire.endTransmission()); deviceCount++;
+
+  lcd.dispStr("ACCL", 0);
+  wire1.beginTransmission(ACCEL_ADDRESS);
+  blinkGo(!wire1.endTransmission()); deviceCount++;
+
+  lcd.dispStr("TEMP", 0);
+  wire1.beginTransmission(BME_ADDRESS);
+  blinkGo(!wire1.endTransmission()); deviceCount++;
+
   delay(750);
   if (deviceCount == 5) { // if all devices detected
     lcd.dispStr("", 1);
@@ -232,42 +229,45 @@ bool setTime() {
   uint8_t minuteOnes = 0; // minute ones digit
   bool ampm = 0; // 0 for AM, 1 for PM
   lcd.dispStr("Hset", 1); // indicate hour set mode
-  while(readBtn4) { // until btn4 is pressed
+  while(digitalRead(btn3)) { // until btn4 is pressed
     lcd.dispDec(hourTens * 10 + hourOnes, 0); // display hour value to set
     if (!digitalRead(btn1)) { // btn1 increments tens digit
       hourTens++;
       if (hourTens > 2 || hourTens * 10 + hourOnes > 23) { // prevent overflow to stay within 0-23
         hourTens = 0;
       }
-      delay(200);
+      delay(BUTTON_DELAY);
     }
     if (!digitalRead(btn2)) { // btn2 increments ones digit
       hourOnes++;
       if (hourOnes > 9 || hourTens * 10 + hourOnes > 23) { // prevent overflow to stay within 0-23
         hourOnes = 0;
       }
-      delay(200);
+      delay(BUTTON_DELAY);
+    }
+    if (!readBtn4) { // exit function for when triggered by mistake
+      return 0;
     }
   }
   lcd.dispStr("hour", 0); // confirm hour has been set
   lcd.dispStr(" set", 1);
   delay(750);
   lcd.dispStr("Mset", 1); // indicate minute set mode
-  while(readBtn4) { // until btn4 is pressed
+  while(digitalRead(btn3)) { // until btn4 is pressed
     lcd.dispDec(minuteTens * 10 + minuteOnes, 0); // display minute value to set
     if (!digitalRead(btn1)) { // btn1 increments tens digit
       minuteTens++;
       if (minuteTens > 5 || minuteTens * 10 + minuteOnes > 59) { // prevent overflow to stay within 0-59
         minuteTens = 0;
       }
-      delay(200);
+      delay(BUTTON_DELAY);
     }
     if (!digitalRead(btn2)) { // btn2 increments ones digit
       minuteOnes++;
       if (minuteOnes > 9 || minuteTens * 10 + minuteOnes > 59) { // prevent overflow to stay within 0-59
         minuteOnes = 0;
       }
-      delay(200);
+      delay(BUTTON_DELAY);
     }
   }
   uint8_t hours = hourTens * 10 + hourOnes; // compute hour and minute values from selection
@@ -287,7 +287,7 @@ bool setTime() {
   } else if (hours == 0) { // if hour is set to 0, automatically set to AM
     ampm = 0;
   } else if (hours <= 12) { // if hour is in 12H format(1-12), ask for AM/PM
-    while(readBtn4) {
+    while(digitalRead(btn3)) {
       if (ampm) {
         lcd.dispStr(" PM ", 0);
       } else {
@@ -330,13 +330,13 @@ right when the chrono started. same for race chrono.
 */
 bool chronoGraph() {
   uint8_t chronoSplitsCounter = 0;
-  while(readBtn4) { // start when button 4 is pressed
-    lcd.dispStr("btn4", 0);
+  while(digitalRead(btn3)) { // start when button 3 is pressed
+    lcd.dispStr("btn3", 0);
     lcd.dispStr("strt", 1);
-    if (!digitalRead(btn3)) { // press btn3 to quit
+    if (!readBtn4) { // press btn4 to quit
       return 0;
     }
-  } while(!readBtn4); // start on rising edge to prevent split recording immediately
+  } while(!digitalRead(btn3)); // start on rising edge to prevent split recording immediately
   uint32_t chronoStartTime = millis(); // time when chronograph started, in milliseconds
   uint32_t chronoMillis; // declare variable for elapsed time in milliseconds
   uint32_t chronoSeconds; // ...elapsed time in seconds
@@ -412,29 +412,28 @@ Can only measure up to 9"59.999
 */
 bool raceChrono() {
   uint8_t raceSplitsCounter = 0;
-  while (readBtn4) {
+  while (digitalRead(btn3)) {
     lcd.dispStr("trck", 0);
     lcd.dispStr(tracks[trackSelection], 1);
-    if (!digitalRead(btn1)) {
+    if (!digitalRead(btn2)) {
       trackSelection--;
       if (trackSelection > 4) trackSelection = 4;
-      delay(200);
+      delay(BUTTON_DELAY);
     }
-    else if (!digitalRead(btn3)) {
+    else if (!digitalRead(btn1)) {
       trackSelection++;
       if (trackSelection > 4) trackSelection = 0;
-      delay(200);
+      delay(BUTTON_DELAY);
     }
-  } while(!readBtn4); // start on rising edge to prevent split recording immediately
-  uint16_t distance = distances[trackSelection];
-  delay(200);
-  while(readBtn4) { // start when button 4 is pressed
-    lcd.dispStr("btn4", 0);
+  } while(!digitalRead(btn3)); // start on rising edge to prevent split recording immediately
+  delay(BUTTON_DELAY);
+  while(digitalRead(btn3)) { // start when button 3 is pressed
+    lcd.dispStr("btn3", 0);
     lcd.dispStr("strt", 1);
-    if (!digitalRead(btn3)) { // press btn3 to quit
+    if (!readBtn4) { // press btn4 to quit
       return 0;
     }
-  } while(!readBtn4); // start on rising edge to prevent split recording immediately
+  } while(!digitalRead(btn3)); // start on rising edge to prevent split recording immediately
   uint32_t raceStartTime = millis(); // time when chronograph started, in milliseconds
   uint32_t raceMillis; // declare variable for elapsed time in milliseconds
   uint32_t raceSeconds; // ...elapsed time in seconds
@@ -497,45 +496,45 @@ uint8_t chronoData() {
   uint8_t raceCounter = 0;
   while (digitalRead(btn1) && digitalRead(btn3)); // wait for either btn1 or btn3 input
   if (!digitalRead(btn1)) { // if chrono records selected
-    delay(225);
+    delay(BUTTON_DELAY);
     while(readBtn4) {
       lcd.dispDec(chronoSplits[chronoCounter] / 1000, 0);
       lcd.dispDec((chronoSplits[chronoCounter] % 1000) * 10 + chronoCounter, 1);
-      if (!digitalRead(btn3)) {
+      if (!digitalRead(btn1)) {
         chronoCounter++;
         if (chronoCounter > 9) {
           chronoCounter = 0;
         }
         Serial.print(chronoSplits[chronoCounter]);
-        delay(200);
-      } else if (!digitalRead(btn1)) {
+        delay(BUTTON_DELAY);
+      } else if (!digitalRead(btn2)) {
         chronoCounter--;
         if (chronoCounter > 9) {
           chronoCounter = 9;
         }
         Serial.print(chronoSplits[chronoCounter]);
-        delay(200);
+        delay(BUTTON_DELAY);
       }
     }
   } else if (!digitalRead(btn3)) { // if race records selected
-    delay(255);
+    delay(BUTTON_DELAY);
     while(readBtn4) {
       lcd.dispDec(raceSplits[raceCounter] / 100, 0);
       lcd.dispDec((raceSplits[raceCounter] % 100) * 100 + raceCounter, 1);
-      if (!digitalRead(btn3)) {
+      if (!digitalRead(btn1)) {
         raceCounter++;
         if (raceCounter > 99) {
           raceCounter = 0;
         }
         Serial.print(raceSplits[raceCounter]);
-        delay(200);
-      } else if (!digitalRead(btn1)) {
+        delay(BUTTON_DELAY);
+      } else if (!digitalRead(btn2)) {
         raceCounter--;
         if (raceCounter > 99) {
           raceCounter = 99;
         }
         Serial.print(raceSplits[raceCounter]);
-        delay(150);
+        delay(BUTTON_DELAY);
       }
     }
   }
@@ -550,11 +549,11 @@ uint8_t party() {
   uint8_t cnt = 0;
   while(digitalRead(btn3)) {
     if (cnt) {
-      delay(200);
+      delay(BUTTON_DELAY);
       lcd.dispStr("OVTA", 0);
       lcd.dispStr("TIME", 1);
     } else {
-      delay(200);
+      delay(BUTTON_DELAY);
       lcd.dispStr(" PAS", 0);
       lcd.dispStr("SION", 1);
     }
@@ -597,6 +596,65 @@ uint8_t party() {
   return 0;
 }
 
+void game() {
+  uint8_t gameNo = 1;
+  while(digitalRead(btn3)) {
+    lcd.dispStr("GAME", 0);
+    lcd.dispDec(gameNo, 1);
+    if (!digitalRead(btn1)) {gameNo++;delay(BUTTON_DELAY);}
+    if (!digitalRead(btn2)) {gameNo--;delay(BUTTON_DELAY);}
+    if (gameNo < 1) {gameNo = 3;}
+    if (gameNo > 3) {gameNo = 1;}
+  }
+  for (int i=3; i>0; i--) {
+    lcd.dispDec(i, 0);
+    lcd.dispDec(i, 1);
+    delay(500);
+  }
+  uint8_t numbers = 0;
+  uint8_t hits = 0;
+  while (hits < 3) {
+  uint8_t target = rand() % 10;  /* generate a number from 0 - 9 */
+  uint32_t startTime = millis();
+    while(digitalRead(btn3)) {
+      if (numbers > 9) {numbers = 0;}
+      if (numbers == 0) {lcd.dispStr("0000", 0);}
+      else {lcd.dispDec(numbers * 1111, 0);}
+      if (target == 0) {lcd.dispStr("0000", 1);}
+      else {lcd.dispDec(target * 1111, 1);}
+      if (millis() - startTime >= 200) {
+        numbers++;
+        startTime = millis();
+      }
+    }
+    if (numbers == target) {
+      hits++;
+      lcd.dispStr("HIT ", 0);
+      lcd.dispDec(hits, 1);
+      delay(1000);
+      for (int i=0; i<5; i++) {
+        lcd.dispStr("HIT ", 0);
+        lcd.dispDec(hits, 1);
+        delay(50);
+        lcd.dispStr("", 0);
+        lcd.dispStr("", 1);
+        delay(50);
+      }
+    } else {
+      for (int i=0; i<5; i++) {
+        lcd.dispStr("MISS", 0);
+        lcd.dispStr("MISS", 1);
+        tone(9, 4000);
+        delay(50);
+        lcd.dispStr("", 0);
+        lcd.dispStr("", 1);
+        noTone(9);
+        delay(50);
+      }
+    }
+  }
+}
+
 void flashLight() {
   bool flash = 0;
   lcd.dispStr("", 0);
@@ -604,7 +662,7 @@ void flashLight() {
   while(digitalRead(btn1)) {
     if (!readBtn4) {
       flash = !flash;
-      delay(250);
+      delay(BUTTON_DELAY);
     }
     if (!digitalRead(btn3)) {
       digitalWrite(6, !digitalRead(btn3));
@@ -612,6 +670,32 @@ void flashLight() {
     digitalWrite(6, flash);
   }
   digitalWrite(6, 0);
+}
+
+void showTelemetry() {
+  while (readBtn4) {
+    int xAxis = round(accel.readFloatAccelX() * 10);
+    int yAxis = round(accel.readFloatAccelY() * 10);
+    int zAxis = round(accel.readFloatAccelZ() * 10);
+
+    lcd.dispDec(xAxis, 0);
+    lcd.dispDec(yAxis, 1);
+
+    delay(100);
+  }
+}
+
+uint8_t configure() {
+  detachInterrupt(btn3);
+  while(readBtn4) {
+    dispMode ? lcd.dispStr("aod ", 0) : lcd.dispStr("wake", 0);
+    if (!digitalRead(btn3)) {
+      dispMode = !dispMode;
+      delay(BUTTON_DELAY);
+    }
+  }
+  attachInterrupt(btn3, menuInt, FALLING);
+  return 0;
 }
 
 /*
@@ -625,25 +709,25 @@ uint8_t mainMenu() {
   uint8_t mainProgramNumber = 1; // counter variable for scrolling through list of programs in main menu
   uint32_t startTime = millis(); // time when function starts
   detachInterrupt(btn3); // detach interrupts for button use during function
-  delay(200); // short delay to not start fast-scrolling right as main menu is called
+  delay(BUTTON_DELAY); // short delay to not start fast-scrolling right as main menu is called
   while (millis() - startTime <= INACTIVITY_TIMEOUT) { // while under timeout threshold
     lcd.dispDec(mainProgramNumber, 0); // display program number on the left, but it starts from 1, not 0
     lcd.dispStr(mainPrograms[mainProgramNumber], 1); // display program name on the right
-    if (!digitalRead(btn3)) { // if button 3 (top right) is pressed
+    if (!digitalRead(btn1)) { // if button 1 is pressed
       mainProgramNumber++; // increment main program counter and select next program
-      if (mainProgramNumber >= NUM_MAIN_PROGRAMS) { // roll back to program 0 after going through entire list
+      if (mainProgramNumber >= numPrograms) { // roll back to program 0 after going through entire list
         mainProgramNumber = 1;
       }
       delay(BUTTON_DELAY); // short delay to prevent crazy fast scrolling
       startTime = millis(); // reset timer to 0 to extend time
-    } else if (!digitalRead(btn1)) { // if button 1 (top left) is pressed
+    } else if (!digitalRead(btn2)) { // if button 2 is pressed
       mainProgramNumber--; // increment main program counter and select next program
-      if (mainProgramNumber >= NUM_MAIN_PROGRAMS) { // roll back to program 0 after going through entire list
-        mainProgramNumber = NUM_MAIN_PROGRAMS - 1;
+      if (mainProgramNumber >= numPrograms) { // roll back to program 0 after going through entire list
+        mainProgramNumber = numPrograms - 1;
       }
       delay(BUTTON_DELAY); // short delay to prevent crazy fast scrolling
       startTime = millis(); // reset timer to 0 to extend time
-    } else if (!readBtn4) { // if button 4 (bottom right) is pressed
+    } else if (!digitalRead(btn3)) { // if button 3 is pressed
       for (int i=0; i<3; i++) { // blink selected program 3 times on the display
         lcd.dispStr("", 0);
         lcd.dispStr("", 1);
@@ -665,7 +749,7 @@ typically you would call runMainProgram(mainMenu()) because
 the value returned from mainMenu() goes where the prog argument is
 */
 
-//char mainPrograms[7][5] = {"quit", "Chro", "data", "Adju", "Prty", "Race", "Flsh"};
+//char mainPrograms[9][5] = {"quit", "Chro", "data", "Adju", "accl", "temp", "Race", "Flsh", "prty"};
 void runMainProgram(uint8_t prog) {
   switch (prog) {
   case 0:
@@ -680,13 +764,19 @@ void runMainProgram(uint8_t prog) {
     setTime();
     break;
   case 4:
-    party();
+    configure();
     break;
   case 5: 
-    raceChrono();
+    showTelemetry();
     break;
   case 6:
+    raceChrono();
+    break;
+  case 7:
     flashLight();
+    break;
+  case 8:
+    game();
     break;
   default:
     lcd.dispStr("Fuck", 0);
@@ -720,7 +810,7 @@ uint8_t starter() {
       if (!digitalRead(btn3)) {
         while(!digitalRead(btn3)) {
           cnt++;
-          tone(9, cnt * 25);
+          tone(9, cnt * 20 + 500);
           uint8_t graph = cnt / 40;
           switch (graph) {
             case 0:
@@ -779,7 +869,7 @@ uint8_t starter() {
       } else {
         while(digitalRead(btn3) && cnt > 0) {
           cnt--;
-          tone(9, cnt * 25);
+          tone(9, cnt * 20 + 500);
           uint8_t graph = cnt / 50;
           switch (graph) {
             case 0:
@@ -871,8 +961,78 @@ float altitude(const int32_t press, const float seaLevel) {
   return (Altitude);
 }  // of method altitude()
 
-// system initialization
+void wakeToCheck() { 
+  while (1) { // loop forever, "home screen" if you will
+    // if menuInt() ISR is called, show time, and if pressed again(double click), enter menu.
+    // goes back to sleep after 2 seconds
+    if (menuActive) {
+      while(!digitalRead(btn3));
+      for (int i=0; i<8; i++) {
+        uint32_t startTime = millis();
+        lcd.dispDec(random() % 9000 + 1000, 0);
+        lcd.dispDec(random() % 9000 + 1000, 1);
+        if (!digitalRead(btn3) && millis() - startTime <= 200) {
+          runMainProgram(mainMenu());
+          attachInterrupt(btn3, menuInt, FALLING); // reattach interrupt to resume normal button function in main()
+          menuActive = false; // reset menuActive to false
+        }
+        delay(50);
+      }
+      if (menuActive) {
+        uint32_t timeWhenTriggered = millis();
+        while (millis() - timeWhenTriggered <= 2000) {
+          uint8_t battLvl = (uint8_t) fuel.cellPercent();
+          if (battLvl > 99) battLvl = 99;
+
+          // LCD displays hours and minutes on the left, seconds on the right
+          lcd.dispDec(rtc.getHours() * 100 + rtc.getMinutes(), 0);
+          lcd.dispDec(rtc.getSeconds() * 100 + battLvl, 1);
+        }
+      }
+      menuActive = false;
+      for (int i=0; i<8; i++) {
+        lcd.dispDec(random() % 9000 + 1000, 0);
+        lcd.dispDec(random() % 9000 + 1000, 1);
+        delay(30);
+      }
+    }
+    lcd.dispStr("ovta", 0);
+    lcd.dispStr("time", 1);
+    USBDevice.detach();
+    LowPower.deepSleep();
+  }
+}
+
+void alwaysOnDisplay() {
+  while (1) { // loop forever, "home screen" if you will
+    //if menuInt() ISR is called, pull up menu and run chosen main program 
+    if (menuActive) {
+      runMainProgram(mainMenu());
+      attachInterrupt(btn3, menuInt, FALLING); // reattach interrupt to resume normal button function in main()
+      menuActive = false; // reset menuActive to false
+    }
+
+    uint8_t battLvl = (uint8_t) fuel.cellPercent();
+    if (battLvl > 99) battLvl = 99;
+
+    // LCD displays hours and minutes on the left, seconds on the right
+    lcd.dispDec(rtc.getHours() * 100 + rtc.getMinutes(), 0);
+    lcd.dispDec(rtc.getSeconds() * 100 + battLvl, 1);
+    USBDevice.detach();
+    LowPower.deepSleep(990);
+  }
+}
+
+/*
+system initialization.
+initializes all peripherals and confirms on LCD display after each peripheral set-up.
+Order: rtc, LCD, I2C & SERCOM2, MAX17048, LIS3DH, BME680, I/O mode &direction, disable unnecessary peripherals
+Finally, starts starter() and after that, runs second I2C echo check
+
+Hold btn4 during boot to skip starter() and second I2C check, to save battery
+*/
 void setup() {
+  bool skipSysInit = false; // skip starter() and sysInit()?
 
   rtc.begin(); // fire up RTC
 
@@ -888,11 +1048,67 @@ void setup() {
   Wire.begin();
   wire1.begin();
 
-  Wire.setClock(400000);
-  wire1.setClock(400000);
+  // pinPeripheral(4, PIO_SERCOM); // SDA: D4 / PA08
+  // pinPeripheral(3, PIO_SERCOM); // SCL: D3 / PA09
 
-  pinPeripheral(4, PIO_SERCOM); // SDA: D4 / PA08
-  pinPeripheral(3, PIO_SERCOM); // SCL: D3 / PA09
+  lcd.dispStr("0nrg", 0);
+
+  lcd.dispStr("I2C", 0); // confirm I2C initialization
+  delay(50);
+
+  // start MAX17048 fuel gauge
+  if (!fuel.begin()) {
+    lcd.dispStr(" FF ", 0); // Fuel Fail error on LCD
+    for (int i=0; i<3; i++) {
+      tone(9, 4000);
+      delay(100);
+      noTone(9);
+      delay(100);
+    }
+    delay(2000);
+  }
+  lcd.dispStr("FUEL", 0); // confirms fuel sensor init
+  delay(50);
+
+  // start LIS3DH accelerometer
+  if (accel.begin() != IMU_SUCCESS) {
+    lcd.dispStr("ACCL", 0); // fail message on LCD
+    lcd.dispStr("FAIL", 1);
+    for (int i=0; i<3; i++) {
+      tone(9, 4000);
+      delay(100);
+      noTone(9);
+      delay(100);
+    }
+    delay(2000);
+  }
+  lcd.dispStr("ACCL", 0); // confirms accelerometer init
+  lcd.dispStr("INIT", 1);
+  delay(50);
+
+  // rom.begin(0x50, wire1);
+
+  // start BME680 enviro sensor
+  bme.begin(BME_ADDRESS, wire1);
+	/* Set the default configuration for temperature, pressure and humidity */
+	bme.setTPH();
+	/* Set the heater configuration to 300 deg C for 100ms for Forced mode */
+	bme.setHeaterProf(300, 100);
+
+  if (bme.checkStatus() != BME68X_OK) {
+    lcd.dispStr("BME ", 0); // fail message on LCD
+    lcd.dispStr("FAIl", 1);
+    for (int i=0; i<3; i++) {
+      tone(9, 4000);
+      delay(100);
+      noTone(9);
+      delay(100);
+    }
+    delay(2000);
+  }
+  lcd.dispStr("BME ", 0); // confirms BME init
+  lcd.dispStr("INIT", 1);
+  delay(50);
 
   // enable pullups on all inputs to prevent floating
   pinMode(btn1, INPUT_PULLUP); // button 1, top left
@@ -902,7 +1118,7 @@ void setup() {
   pinMode(6, OUTPUT); // flashlight
   pinMode(9, OUTPUT); // piezo
 
-  for (int i=0; i<5; i++) {
+  for (int i=0; i<5; i++) { // set LEDs to output
     pinMode(leds[i], OUTPUT);
   }
 
@@ -911,82 +1127,84 @@ void setup() {
   PORT->Group[0].PINCFG[12].reg = PORT_PINCFG_PULLEN | PORT_PINCFG_INEN;
   PORT->Group[0].OUTSET.reg = PORT_PA12;
 
+  // lcd.dispStr("IO D", 0);
+  // lcd.dispStr(" set", 1);
+
   // set button 3 (top right) to open main menu
   // set to FALLING because RISING would often trigger the interrupt but not actually run the ISR,
   // leading to systemw-wide clock delays
-  attachInterrupt(btn3, menuInt, FALLING);
+  LowPower.attachInterruptWakeup(btn3, menuInt, FALLING);
 
-  fuel.begin(); // initialize MAX17048
-  accel.begin();
-  bme.begin(0x76, wire1);
+  // disable all unnecessary peripherals
+  SERCOM0->USART.CTRLA.bit.ENABLE=0;
+  SERCOM1->USART.CTRLA.bit.ENABLE=0;
+  SERCOM4->USART.CTRLA.bit.ENABLE=0;
+  SERCOM5->USART.CTRLA.bit.ENABLE=0;
+  SERCOM0->SPI.CTRLA.bit.ENABLE=0;
+  SERCOM1->SPI.CTRLA.bit.ENABLE=0;
+  SERCOM4->SPI.CTRLA.bit.ENABLE=0;
+  SERCOM5->SPI.CTRLA.bit.ENABLE=0;
+  SERCOM0->I2CM.CTRLA.bit.ENABLE=0;
+  SERCOM1->I2CM.CTRLA.bit.ENABLE=0;
+  SERCOM4->I2CM.CTRLA.bit.ENABLE=0;
+  SERCOM5->I2CM.CTRLA.bit.ENABLE=0;
+  SERCOM0->I2CS.CTRLA.bit.ENABLE=0;
+  SERCOM1->I2CS.CTRLA.bit.ENABLE=0;
+  SERCOM4->I2CS.CTRLA.bit.ENABLE=0;
+  SERCOM5->I2CS.CTRLA.bit.ENABLE=0;
+  I2S->CTRLA.bit.ENABLE=0;
+  ADC->CTRLA.bit.ENABLE=0;
+  DAC->CTRLA.bit.ENABLE=0;
+  AC->CTRLA.bit.ENABLE=0;
 
-	if(bme.checkStatus())
-	{
-		if (bme.checkStatus() == BME68X_ERROR)
-		{
-			Serial.println("Sensor error:" + bme.statusString());
-			return;
-		}
-		else if (bme.checkStatus() == BME68X_WARNING)
-		{
-			Serial.println("Sensor Warning:" + bme.statusString());
-		}
-	}
-	/* Set the default configuration for temperature, pressure and humidity */
-	bme.setTPH();
-	/* Set the heater configuration to 300 deg C for 100ms for Forced mode */
-	bme.setHeaterProf(300, 100);
-	Serial.println("TimeStamp(ms), Temperature(deg C), Pressure(Pa), Humidity(%), Gas resistance(ohm), Status");
+  // confirm IO direction init
+  lcd.dispStr("IO d", 0);
+  lcd.dispStr(" set", 1);
+  delay(50);
 
-  starter();
-  bootUpSitRep();
+  // if BTN4 isn't pressed, run starter() and second system init
+  if (readBtn4 || fuel.cellPercent() <= 10) {
+    starter();
+    sysCheck();
+  }
   menuActive = false; // for some reason starter() triggers menuInt(), so I need this to prevent the watch from booting straight into the menu
-
 }
 
 // main function
 void loop() {
+  //alwaysOnDisplay();
+  wakeToCheck();
 
-	bme68xData data;
+	// bme68xData data;
 
-	bme.setOpMode(BME68X_FORCED_MODE);
-	delayMicroseconds(bme.getMeasDur());
+	// bme.setOpMode(BME68X_FORCED_MODE);
+	// delayMicroseconds(bme.getMeasDur());
 
-	if (bme.fetchData())
-	{
-		bme.getData(data);
-    int temp = (int)data.temperature;
-    int hum = (int)data.humidity;
-		lcd.dispDec(temp, 0);
-    lcd.dispDec(hum, 1);
-		Serial.print(String(data.temperature) + ", ");
-		Serial.print(String(data.pressure) + ", ");
-		Serial.print(String(data.humidity) + ", ");
-		Serial.print(String(data.gas_resistance) + ", ");
-		Serial.println(data.status, HEX);
-	}
-
-  // int xAxis = round(accel.readFloatAccelX() * 10);
-  // int yAxis = round(accel.readFloatAccelY() * 10);
-  // int zAxis = round(accel.readFloatAccelZ() * 10);
-
-  // lcd.dispDec(xAxis, 0);
-  // lcd.dispDec(yAxis, 1);
-
-  // delay(100);
-  
-
-  // uint8_t battLvl = (uint8_t) fuel.cellPercent();
-  // if (battLvl > 99) battLvl = 99;
-
-  // // LCD displays hours and minutes on the left, seconds on the right
-  // lcd.dispDec(rtc.getHours() * 100 + rtc.getMinutes(), 0);
-  // lcd.dispDec(rtc.getSeconds() * 100 + battLvl, 1);
-
-  // //if menuInt() ISR is called, pull up menu and run chosen main program
-  // if (menuActive) {
-  //   runMainProgram(mainMenu());
-  //   attachInterrupt(btn3, menuInt, FALLING); // reattach interrupt to resume normal button function in main()
-  //   menuActive = false; // reset menuActive to false
-  // }
+	// if (bme.fetchData())
+	// {
+	// 	bme.getData(data);
+  //   int temp = (int)data.temperature;
+  //   int hum = (int)data.humidity;
+	// 	lcd.dispDec(temp, 0);
+  //   lcd.dispDec(hum, 1);
+	// 	Serial.print(String(data.temperature) + ", ");
+	// 	Serial.print(String(data.pressure) + ", ");
+	// 	Serial.print(String(data.humidity) + ", ");
+	// 	Serial.print(String(data.gas_resistance) + ", ");
+	// 	Serial.println(data.status, HEX);
+	// }
 }
+
+// code to use later for checking BME status
+// if(bme.checkStatus())
+// {
+//   if (bme.checkStatus() == BME68X_ERROR)
+//   {
+//     Serial.println("Sensor error:" + bme.statusString());
+//     return;
+//   }
+//   else if (bme.checkStatus() == BME68X_WARNING)
+//   {
+//     Serial.println("Sensor Warning:" + bme.statusString());
+//   }
+// }

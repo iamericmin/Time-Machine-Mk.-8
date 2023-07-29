@@ -7,7 +7,7 @@
 <setting keepoldvectorfont="yes"/>
 <setting verticaltext="up"/>
 </settings>
-<grid distance="0.1" unitdist="inch" unit="inch" style="lines" multiple="1" display="yes" altdistance="0.01" altunitdist="inch" altunit="inch"/>
+<grid distance="0.025" unitdist="inch" unit="inch" style="lines" multiple="1" display="yes" altdistance="0.01" altunitdist="inch" altunit="inch"/>
 <layers>
 <layer number="1" name="Top" color="4" fill="1" visible="no" active="no"/>
 <layer number="2" name="Route2" color="16" fill="1" visible="no" active="no"/>
@@ -20141,6 +20141,9 @@ I2C</description>
 <part name="TP14" library="testpad" library_urn="urn:adsk.eagle:library:385" deviceset="TP" device="TP14R" package3d_urn="urn:adsk.eagle:package:27966/1" value="TPTP14R"/>
 <part name="TP18" library="testpad" library_urn="urn:adsk.eagle:library:385" deviceset="TP" device="TP14R" package3d_urn="urn:adsk.eagle:package:27966/1" value="TPTP14R"/>
 <part name="IC2" library="microchip" library_urn="urn:adsk.eagle:library:294" deviceset="24*" device="ST" package3d_urn="urn:adsk.eagle:package:20813/2" technology="LCS52"/>
+<part name="TP15" library="testpad" library_urn="urn:adsk.eagle:library:385" deviceset="TP" device="TP14R" package3d_urn="urn:adsk.eagle:package:27966/1" value="TPTP14R"/>
+<part name="TP16" library="testpad" library_urn="urn:adsk.eagle:library:385" deviceset="TP" device="TP14R" package3d_urn="urn:adsk.eagle:package:27966/1" value="TPTP14R"/>
+<part name="C14" library="rcl" library_urn="urn:adsk.eagle:library:334" deviceset="C-EU" device="C0402" package3d_urn="urn:adsk.eagle:package:23626/2" value="0.1uF"/>
 </parts>
 <sheets>
 <sheet>
@@ -20173,6 +20176,8 @@ I2C</description>
 <text x="90.17" y="31.75" size="1.778" layer="95">TP13</text>
 <text x="90.17" y="29.21" size="1.778" layer="95">TP14</text>
 <text x="63.5" y="68.58" size="1.778" layer="95">TP18</text>
+<text x="209.55" y="127" size="1.778" layer="95">TP10</text>
+<text x="209.55" y="124.46" size="1.778" layer="95">TP11</text>
 </plain>
 <instances>
 <instance part="D1" gate="G$1" x="143.51" y="156.21" smashed="yes" rot="R270">
@@ -20476,6 +20481,16 @@ I2C</description>
 <attribute name="NAME" x="195.58" y="107.95" size="1.778" layer="95" rot="R180"/>
 <attribute name="VALUE" x="195.58" y="129.54" size="1.778" layer="96" rot="R180"/>
 </instance>
+<instance part="TP15" gate="G$1" x="207.01" y="127" smashed="yes" rot="R90">
+<attribute name="TP_SIGNAL_NAME" x="208.28" y="128.27" size="1.778" layer="97" rot="R90"/>
+</instance>
+<instance part="TP16" gate="G$1" x="207.01" y="124.46" smashed="yes" rot="R90">
+<attribute name="TP_SIGNAL_NAME" x="208.28" y="125.73" size="1.778" layer="97" rot="R90"/>
+</instance>
+<instance part="C14" gate="G$1" x="168.91" y="111.76" smashed="yes" rot="R180">
+<attribute name="NAME" x="167.386" y="111.379" size="1.778" layer="95" rot="R180"/>
+<attribute name="VALUE" x="167.386" y="116.459" size="1.778" layer="96" rot="R180"/>
+</instance>
 </instances>
 <busses>
 </busses>
@@ -20711,6 +20726,11 @@ I2C</description>
 <pinref part="IC2" gate="G$1" pin="GND"/>
 <wire x1="177.8" y1="129.54" x2="157.48" y2="129.54" width="0.1524" layer="91"/>
 <label x="157.48" y="129.54" size="1.778" layer="95"/>
+</segment>
+<segment>
+<pinref part="C14" gate="G$1" pin="2"/>
+<wire x1="168.91" y1="116.84" x2="157.48" y2="116.84" width="0.1524" layer="91"/>
+<label x="157.48" y="116.84" size="1.778" layer="95"/>
 </segment>
 </net>
 <net name="LED2" class="0">
@@ -20949,11 +20969,6 @@ I2C</description>
 <wire x1="90.17" y1="46.99" x2="106.68" y2="46.99" width="0.1524" layer="91"/>
 <label x="99.06" y="46.99" size="1.778" layer="95"/>
 </segment>
-<segment>
-<pinref part="IC2" gate="G$1" pin="SCL"/>
-<wire x1="198.12" y1="111.76" x2="213.36" y2="111.76" width="0.1524" layer="91"/>
-<label x="208.28" y="111.76" size="1.778" layer="95"/>
-</segment>
 </net>
 <net name="SDA" class="0">
 <segment>
@@ -20979,11 +20994,6 @@ I2C</description>
 <pinref part="TP9" gate="G$1" pin="TP"/>
 <wire x1="106.68" y1="44.45" x2="90.17" y2="44.45" width="0.1524" layer="91"/>
 <label x="99.06" y="44.45" size="1.778" layer="95"/>
-</segment>
-<segment>
-<pinref part="IC2" gate="G$1" pin="SDA"/>
-<wire x1="170.18" y1="119.38" x2="157.48" y2="119.38" width="0.1524" layer="91"/>
-<label x="157.48" y="119.38" size="1.778" layer="95"/>
 </segment>
 </net>
 <net name="BTN3" class="0">
@@ -21337,6 +21347,15 @@ I2C</description>
 <wire x1="63.5" y1="68.58" x2="77.47" y2="68.58" width="0.1524" layer="91"/>
 <label x="73.66" y="68.58" size="1.778" layer="95"/>
 </segment>
+<segment>
+<pinref part="IC2" gate="G$1" pin="VCC"/>
+<wire x1="177.8" y1="106.68" x2="168.91" y2="106.68" width="0.1524" layer="91"/>
+<label x="157.48" y="106.68" size="1.778" layer="95"/>
+<pinref part="C14" gate="G$1" pin="1"/>
+<wire x1="168.91" y1="106.68" x2="157.48" y2="106.68" width="0.1524" layer="91"/>
+<wire x1="168.91" y1="109.22" x2="168.91" y2="106.68" width="0.1524" layer="91"/>
+<junction x="168.91" y="106.68"/>
+</segment>
 </net>
 <net name="VIN_USB" class="0">
 <segment>
@@ -21400,6 +21419,16 @@ I2C</description>
 <wire x1="106.68" y1="38.1" x2="90.17" y2="38.1" width="0.1524" layer="91"/>
 <label x="99.06" y="38.1" size="1.778" layer="95"/>
 </segment>
+<segment>
+<pinref part="IC2" gate="G$1" pin="SDA"/>
+<wire x1="170.18" y1="119.38" x2="157.48" y2="119.38" width="0.1524" layer="91"/>
+<label x="157.48" y="119.38" size="1.778" layer="95"/>
+</segment>
+<segment>
+<pinref part="TP16" gate="G$1" pin="TP"/>
+<wire x1="226.06" y1="124.46" x2="209.55" y2="124.46" width="0.1524" layer="91"/>
+<label x="218.44" y="124.46" size="1.778" layer="95"/>
+</segment>
 </net>
 <net name="SCL1" class="0">
 <segment>
@@ -21430,6 +21459,16 @@ I2C</description>
 <pinref part="TP10" gate="G$1" pin="TP"/>
 <wire x1="90.17" y1="40.64" x2="106.68" y2="40.64" width="0.1524" layer="91"/>
 <label x="99.06" y="40.64" size="1.778" layer="95"/>
+</segment>
+<segment>
+<pinref part="IC2" gate="G$1" pin="SCL"/>
+<wire x1="198.12" y1="111.76" x2="213.36" y2="111.76" width="0.1524" layer="91"/>
+<label x="208.28" y="111.76" size="1.778" layer="95"/>
+</segment>
+<segment>
+<pinref part="TP15" gate="G$1" pin="TP"/>
+<wire x1="209.55" y1="127" x2="226.06" y2="127" width="0.1524" layer="91"/>
+<label x="218.44" y="127" size="1.778" layer="95"/>
 </segment>
 </net>
 <net name="N$1" class="0">
@@ -21599,13 +21638,6 @@ I2C</description>
 <pinref part="U5" gate="A" pin="D"/>
 <pinref part="LS1" gate="G$1" pin="N"/>
 <wire x1="62.23" y1="48.26" x2="59.69" y2="48.26" width="0.1524" layer="91"/>
-</segment>
-</net>
-<net name="VN_UC" class="0">
-<segment>
-<pinref part="IC2" gate="G$1" pin="VCC"/>
-<wire x1="177.8" y1="106.68" x2="157.48" y2="106.68" width="0.1524" layer="91"/>
-<label x="157.48" y="106.68" size="1.778" layer="95"/>
 </segment>
 </net>
 </nets>

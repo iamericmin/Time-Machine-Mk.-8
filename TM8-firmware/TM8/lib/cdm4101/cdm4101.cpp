@@ -256,7 +256,7 @@ void CDM4101::dispCharRaw(uint8_t index, char c, bool disp)
 
 //----------------------------------------------------------------------------
 
-void CDM4101::dispStr(char *s, bool disp)
+void CDM4101::dispStr(const char *s, bool disp)
 {
 	uint8_t i,c;
 

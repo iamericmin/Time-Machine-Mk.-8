@@ -40,6 +40,7 @@ RTCZero rtc; // RTC object
 Adafruit_MAX17048 fuel;
 LIS3DH accel(I2C_MODE, 0x18);
 Bme68x bme;
+bme68xData BMEData;
 ExternalEEPROM rom;
 
 const uint8_t btn1 = 2; // top left button
@@ -57,19 +58,30 @@ uint8_t leds[] = {7, A3, A1, 8, 5};
 
 bool menuActive = false; // main Menu ISR handler variable,
 // becomes true when main menu is opened and false when menu's over
+
+bool showDateActive = false; // interrupt for showing date on home screen.
+// triggered by BTN1
+
 bool splitActive = false; // ISR handler variable for recording splits in chronograph
+
+bool actionActive = false; // ISR handler for action button (BTN2)
 
 bool dispMode = 1; // 0 for wakeToCheck, 1 for AOD
 
 // list of programs in main menu 8 elements long with each element 5 bytes (4 bytes + line end)
 // first program is "quit", gets called when mainMenu() quits from no activity. Returns to main() loop.
-char mainPrograms[9][5] = {"quit", "Chro", "data", "Adju", "conf", "sens", "Race", "Flsh", "game"};
+char mainPrograms[9][5] = {"quit", "Chro", "data", "Adju", "prty", "sens", "Race", "Flsh", "game"};
+char daysOfTheWeek[7][4] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+
 uint8_t numPrograms = sizeof(mainPrograms) / sizeof(mainPrograms[0]);
 
 // RTC time variables
 uint8_t seconds = 0;
 uint8_t minutes = 0;
 uint8_t hours = 0;
+uint16_t year = 23;
+uint8_t month = 12;
+uint8_t day = 29;
 
 /*
 Main menu interrupt handler.
@@ -79,6 +91,14 @@ Interrupt called -> menuActive becomes true -> main() detects menuActive == true
 */
 void menuInt() {
   menuActive = true;
+}
+
+void showDateInt() {
+  showDateActive = true;
+}
+
+void actionInt() {
+  actionActive = true;
 }
 
 // ISR for recording splits in chronograph
@@ -98,6 +118,14 @@ void animSwipeDown(uint8_t animDelay) {
     }
     lcd.Update(0);
     lcd.Update(1);
+    delay(animDelay);
+  }
+}
+
+void scrambleAnim(uint8_t cnt, uint8_t animDelay) {
+  for (int i=0; i<cnt; i++) {
+    lcd.dispDec(random() % 9000 + 1000, 0);
+    lcd.dispDec(random() % 9000 + 1000, 1);
     delay(animDelay);
   }
 }
@@ -216,6 +244,10 @@ void sysCheck() {
   }
 }
 
+uint8_t getDayOfWeek(uint16_t y, uint16_t m, uint16_t d) {
+  return (d+=m<3?y--:y-2,23*m/9+d+4+y/4-y/100+y/400)%7;
+}
+
 /*
 Sets the time.
 returns 0 in case of an error (hours > 23 or minutes > 59) but this shouldn't happen.
@@ -228,7 +260,7 @@ bool setTime() {
   uint8_t minuteTens = 0; // minute tens digit
   uint8_t minuteOnes = 0; // minute ones digit
   bool ampm = 0; // 0 for AM, 1 for PM
-  lcd.dispStr("Hset", 1); // indicate hour set mode
+  lcd.dispStr("hour", 1); // indicate hour set mode
   while(digitalRead(btn3)) { // until btn4 is pressed
     lcd.dispDec(hourTens * 10 + hourOnes, 0); // display hour value to set
     if (!digitalRead(btn1)) { // btn1 increments tens digit
@@ -252,7 +284,7 @@ bool setTime() {
   lcd.dispStr("hour", 0); // confirm hour has been set
   lcd.dispStr(" set", 1);
   delay(750);
-  lcd.dispStr("Mset", 1); // indicate minute set mode
+  lcd.dispStr(" min", 1); // indicate minute set mode
   while(digitalRead(btn3)) { // until btn4 is pressed
     lcd.dispDec(minuteTens * 10 + minuteOnes, 0); // display minute value to set
     if (!digitalRead(btn1)) { // btn1 increments tens digit
@@ -314,9 +346,88 @@ bool setTime() {
   lcd.dispStr("time", 0);
   lcd.dispStr(" set", 1);
   delay(1000);
+  for (int i=0; i<3; i++) {
+    lcd.dispStr("", 0);
+    lcd.dispStr("", 1);
+    delay(50);
+    lcd.dispStr("time", 0);
+    lcd.dispStr("set", 1);
+    delay(50);
+  }
   return 1;
 }
 
+bool setDate() {
+  uint8_t month = 12; // month value
+  uint8_t dayTens = 2; // date tens digit
+  uint8_t dayOnes = 9; // date ones digit
+  lcd.dispStr("mnth", 1); // indicate month set mode
+  while(digitalRead(btn3)) { // until btn4 is pressed
+    lcd.dispDec(month, 0); // display month value to set
+    if (!digitalRead(btn1)) { // btn1 increments month
+      month++;
+      if (month > 12 || month < 1) { // prevent overflow to stay within 1-12
+        month = 1;
+      }
+      delay(BUTTON_DELAY);
+    }
+    if (!digitalRead(btn2)) { // btn1 increments month
+      month--;
+      if (month > 12 || month < 1) { // prevent overflow to stay within 1-12
+        month = 12;
+      }
+      delay(BUTTON_DELAY);
+    }
+    if (!readBtn4) { // exit function for when triggered by mistake
+      return 0;
+    }
+  }
+  lcd.dispStr("mnth", 0); // confirm month has been set
+  lcd.dispStr(" set", 1);
+  delay(750);
+  lcd.dispStr(" day", 1); // indicate day set mode
+  while(digitalRead(btn3)) { // until btn4 is pressed
+    lcd.dispDec(dayTens * 10 + dayOnes, 0); // display day value to set
+    if (!digitalRead(btn1)) { // btn1 increments tens digit
+      dayTens++;
+      if (dayTens > 3 || dayTens * 10 + dayOnes > 31) { // prevent overflow to stay within 0-31
+        dayTens = 0;
+      }
+      delay(BUTTON_DELAY);
+    }
+    if (!digitalRead(btn2)) { // btn2 increments ones digit
+      dayOnes++;
+      if (dayOnes > 9 || dayTens * 10 + dayOnes > 31) { // prevent overflow to stay within 0-31
+        dayOnes = 0;
+      }
+      delay(BUTTON_DELAY);
+    }
+  }
+  uint8_t date = dayTens * 10 + dayOnes;
+  if (month > 12 || date > 31) { // error handling if hour/min values are beyond acceptable range, shouldn't happen tho
+    lcd.dispStr(" Err", 0);
+    lcd.dispStr("or  ", 1);
+    delay(1000);
+    return 0; // quit setTime()
+  }
+  // for some reason, doesn't work properly without the next three lines
+  lcd.dispDec(month, 0);
+  lcd.dispDec(date, 1);
+  delay(2000);
+  rtc.setDate(date, month, 23);
+  lcd.dispStr("date", 0);
+  lcd.dispStr(" set", 1);
+  delay(1000);
+  for (int i=0; i<3; i++) {
+    lcd.dispStr("", 0);
+    lcd.dispStr("", 1);
+    delay(50);
+    lcd.dispStr("date", 0);
+    lcd.dispStr("set", 1);
+    delay(50);
+  }
+  return 1;
+}
 
 uint32_t chronoSplits[10]; // 10-long split record
 
@@ -554,8 +665,8 @@ uint8_t party() {
       lcd.dispStr("TIME", 1);
     } else {
       delay(BUTTON_DELAY);
-      lcd.dispStr(" PAS", 0);
-      lcd.dispStr("SION", 1);
+      lcd.dispStr("it*s", 0);
+      lcd.dispStr(" lit", 1);
     }
     if (!readBtn4) {
       lcd.dispStr("", 0);
@@ -567,50 +678,21 @@ uint8_t party() {
       cnt = !cnt;
     }
     if (!digitalRead(btn1)) {
-      lcd.dispStr("", 0);
-      lcd.dispStr("", 1);
       delay(5000);
-      animTach();
       for (int i=0; i<5; i++) {
-        lcd.dispStr("N vi", 0);
-        lcd.dispStr("sion", 1);
-        delay(133);
-        lcd.dispStr("", 0);
-        lcd.dispStr("", 1);
-        delay(133);
+        digitalWrite(leds[i], 1);
       }
+      delay(5000);
       for (int i=0; i<5; i++) {
-        lcd.dispStr(" 74 ", 0);
-        lcd.dispStr(" 74 ", 1);
-        delay(133);
-        lcd.dispStr("", 0);
-        lcd.dispStr("", 1);
-        delay(133);
+        digitalWrite(leds[i], 0);
       }
-      lcd.dispStr(" 74 ", 0);
-      lcd.dispStr(" 74 ", 1);
-      delay(1000);
       return 0;
     }
   }
   return 0;
 }
 
-void game() {
-  uint8_t gameNo = 1;
-  while(digitalRead(btn3)) {
-    lcd.dispStr("GAME", 0);
-    lcd.dispDec(gameNo, 1);
-    if (!digitalRead(btn1)) {gameNo++;delay(BUTTON_DELAY);}
-    if (!digitalRead(btn2)) {gameNo--;delay(BUTTON_DELAY);}
-    if (gameNo < 1) {gameNo = 3;}
-    if (gameNo > 3) {gameNo = 1;}
-  }
-  for (int i=3; i>0; i--) {
-    lcd.dispDec(i, 0);
-    lcd.dispDec(i, 1);
-    delay(500);
-  }
+void matchNumbersGame() {
   uint8_t numbers = 0;
   uint8_t hits = 0;
   while (hits < 3) {
@@ -655,6 +737,114 @@ void game() {
   }
 }
 
+void reactionTimingGame() {
+
+}
+
+/*
+F1 reaction game: hit 10 targets consecutively under 350ms reaction time to pass
+*/
+void F1ReactionGame() {
+  int timing;
+  uint8_t hits = 0;
+  uint8_t corner;
+  while (hits <= 10) {
+    delay(rand() % 2051 + 2000); // start with a random delay from 2 to 4.5 seconds
+    corner = rand() % 4;
+    switch (corner) {
+      case 0:
+        for (int i=0; i<4; i++) {
+          lcd.dispCharRaw(i, 0x71, 0);
+        }
+        break;
+      case 1:
+        for (int i=0; i<4; i++) {
+          lcd.dispCharRaw(i, 0x1E, 0);
+        }
+        break;
+      case 2:
+        for (int i=0; i<4; i++) {
+          lcd.dispCharRaw(i, 0x71, 1);
+        }
+        break;
+      case 3:
+        for (int i=0; i<4; i++) {
+          lcd.dispCharRaw(i, 0x1E, 1);
+        }
+        break;
+    }
+    bool hit = 0;
+    uint32_t startTime = millis();
+    while(millis() - startTime <= 500) {
+      if (corner == 0 && !digitalRead(btn1)) {
+        hits++;
+        hit = 1;
+        lcd.dispStr("hit ", 0);
+        lcd.dispChar(3, hits, 0);
+        lcd.dispDec(millis() - startTime, 1);
+        delay(1000);
+      } else if (corner == 1 && !digitalRead(btn2)) {
+        hits++;
+        hit = 1;
+        lcd.dispStr("hit ", 0);
+        lcd.dispChar(3, hits, 0);
+        lcd.dispDec(millis() - startTime, 1);
+        delay(1000);
+      } else if (corner == 2 && !digitalRead(btn3)) {
+        hits++;
+        hit = 1;
+        lcd.dispStr("hit ", 0);
+        lcd.dispChar(3, hits, 0);
+        lcd.dispDec(millis() - startTime, 1);
+        delay(1000);
+      } else if (corner == 3 && !readBtn4) {
+        hits++;
+        hit = 1;
+        lcd.dispStr("hit ", 0);
+        lcd.dispChar(3, hits, 0);
+        lcd.dispDec(millis() - startTime, 1);
+        delay(1000);
+      }
+    }
+    if (!hit) {
+      lcd.dispStr("TIME", 0);
+      lcd.dispStr(" OUT", 1);
+      delay(1000);
+    }
+    hit = 0;
+    lcd.Command(CDM4101_CLEAR, 0);
+    lcd.Command(CDM4101_CLEAR, 1);
+  }
+}
+
+void game() {
+  uint8_t gameNo = 1;
+  while(digitalRead(btn3)) {
+    lcd.dispStr("GAME", 0);
+    lcd.dispDec(gameNo, 1);
+    if (!digitalRead(btn1)) {gameNo++;delay(BUTTON_DELAY);}
+    if (!digitalRead(btn2)) {gameNo--;delay(BUTTON_DELAY);}
+    if (gameNo < 1) {gameNo = 3;}
+    if (gameNo > 3) {gameNo = 1;}
+  }
+  for (int i=3; i>0; i--) {
+    animSwipeDown(30);
+  }
+  switch (gameNo) {
+  case 1:
+    matchNumbersGame();
+    break;
+  case 2:
+    reactionTimingGame();
+    break;
+  case 3:
+    F1ReactionGame();
+    break;
+  default:
+    break;
+  }
+}
+
 void flashLight() {
   bool flash = 0;
   lcd.dispStr("", 0);
@@ -667,21 +857,53 @@ void flashLight() {
     if (!digitalRead(btn3)) {
       digitalWrite(6, !digitalRead(btn3));
     }
-    digitalWrite(6, flash);
+    // digitalWrite(6, flash);
+    for (int i=0; i<5; i++) {
+      digitalWrite(leds[i], flash);
+    }
   }
   digitalWrite(6, 0);
 }
 
+void showBMEData(uint16_t dispDelay) {
+	bme.setOpMode(BME68X_FORCED_MODE);
+	delayMicroseconds(bme.getMeasDur());
+  
+	if (bme.fetchData()) {
+		bme.getData(BMEData);
+    int temp = (int)BMEData.temperature;
+    int hum = (int)BMEData.humidity;
+		lcd.dispDec(temp, 0);
+    lcd.dispDec(hum, 1);
+	}
+
+  delay(dispDelay);
+}
+
+void showAccelData(uint16_t dispDelay) {
+  int xAxis = round(accel.readFloatAccelX() * 10);
+  int yAxis = round(accel.readFloatAccelY() * 10);
+  int zAxis = round(accel.readFloatAccelZ() * 10);
+
+  lcd.dispDec(xAxis, 0);
+  lcd.dispDec(yAxis, 1);
+
+  delay(dispDelay);
+}
+
 void showTelemetry() {
   while (readBtn4) {
-    int xAxis = round(accel.readFloatAccelX() * 10);
-    int yAxis = round(accel.readFloatAccelY() * 10);
-    int zAxis = round(accel.readFloatAccelZ() * 10);
-
-    lcd.dispDec(xAxis, 0);
-    lcd.dispDec(yAxis, 1);
-
-    delay(100);
+    lcd.dispStr("temp", 0);
+    lcd.dispStr("accl", 1);
+    if (!digitalRead(btn1)) {
+      while (readBtn4) {
+        showBMEData(1000);
+      }
+    } else if (!digitalRead(btn3)) {
+      while (readBtn4) {
+        showAccelData(100);
+      }
+    }
   }
 }
 
@@ -709,7 +931,7 @@ uint8_t mainMenu() {
   uint8_t mainProgramNumber = 1; // counter variable for scrolling through list of programs in main menu
   uint32_t startTime = millis(); // time when function starts
   detachInterrupt(btn3); // detach interrupts for button use during function
-  delay(BUTTON_DELAY); // short delay to not start fast-scrolling right as main menu is called
+  detachInterrupt(btn1);
   while (millis() - startTime <= INACTIVITY_TIMEOUT) { // while under timeout threshold
     lcd.dispDec(mainProgramNumber, 0); // display program number on the left, but it starts from 1, not 0
     lcd.dispStr(mainPrograms[mainProgramNumber], 1); // display program name on the right
@@ -764,7 +986,7 @@ void runMainProgram(uint8_t prog) {
     setTime();
     break;
   case 4:
-    configure();
+    party();
     break;
   case 5: 
     showTelemetry();
@@ -783,6 +1005,7 @@ void runMainProgram(uint8_t prog) {
     delay(1000);
     break;
   }
+  scrambleAnim(8, 30);
 }
 
 uint8_t firingOrder[] = {1, 5, 3, 7, 4, 8, 2, 6};
@@ -974,7 +1197,9 @@ void wakeToCheck() {
         if (!digitalRead(btn3) && millis() - startTime <= 200) {
           runMainProgram(mainMenu());
           attachInterrupt(btn3, menuInt, FALLING); // reattach interrupt to resume normal button function in main()
+          attachInterrupt(btn1, showDateInt, FALLING);
           menuActive = false; // reset menuActive to false
+          showDateActive = false;
         }
         delay(50);
       }
@@ -990,12 +1215,14 @@ void wakeToCheck() {
         }
       }
       menuActive = false;
-      for (int i=0; i<8; i++) {
-        lcd.dispDec(random() % 9000 + 1000, 0);
-        lcd.dispDec(random() % 9000 + 1000, 1);
-        delay(30);
-      }
+    } else if (showDateActive) {
+      scrambleAnim(8, 30);
+      lcd.dispDec(rtc.getMonth() * 100 + rtc.getDay(), 0);
+      lcd.dispStr(daysOfTheWeek[getDayOfWeek(rtc.getYear() + 2000, rtc.getMonth(), rtc.getDay())], 1);
+      delay(1000);
+      showDateActive = false;
     }
+    scrambleAnim(8, 30);
     lcd.dispStr("ovta", 0);
     lcd.dispStr("time", 1);
     USBDevice.detach();
@@ -1007,9 +1234,32 @@ void alwaysOnDisplay() {
   while (1) { // loop forever, "home screen" if you will
     //if menuInt() ISR is called, pull up menu and run chosen main program 
     if (menuActive) {
+      scrambleAnim(8, 30);
       runMainProgram(mainMenu());
       attachInterrupt(btn3, menuInt, FALLING); // reattach interrupt to resume normal button function in main()
+      attachInterrupt(btn1, showDateInt, FALLING);
       menuActive = false; // reset menuActive to false
+      showDateActive = false;
+      actionActive = false;
+    } else if (showDateActive) {
+      scrambleAnim(8, 30);
+      uint32_t startTime = millis();
+      while (millis() - startTime <= 1000) {
+        lcd.dispDec(rtc.getMonth() * 100 + rtc.getDay(), 0);
+        lcd.dispStr(daysOfTheWeek[getDayOfWeek(rtc.getYear() + 2000, rtc.getMonth(), rtc.getDay())], 1);
+        if (!digitalRead(btn1) && millis() - startTime <= 200) {
+          setDate();
+          attachInterrupt(btn1, showDateInt, FALLING);
+          menuActive = false; // reset menuActive to false
+          showDateActive = false;
+        }
+      }
+      scrambleAnim(8, 30);
+      showDateActive = false;
+    }
+    if (actionActive) {
+      showBMEData(2000);
+      actionActive = false;
     }
 
     uint8_t battLvl = (uint8_t) fuel.cellPercent();
@@ -1019,7 +1269,7 @@ void alwaysOnDisplay() {
     lcd.dispDec(rtc.getHours() * 100 + rtc.getMinutes(), 0);
     lcd.dispDec(rtc.getSeconds() * 100 + battLvl, 1);
     USBDevice.detach();
-    LowPower.deepSleep(990);
+    LowPower.deepSleep(996);
   }
 }
 
@@ -1032,7 +1282,6 @@ Finally, starts starter() and after that, runs second I2C echo check
 Hold btn4 during boot to skip starter() and second I2C check, to save battery
 */
 void setup() {
-  bool skipSysInit = false; // skip starter() and sysInit()?
 
   rtc.begin(); // fire up RTC
 
@@ -1040,6 +1289,7 @@ void setup() {
   rtc.setHours(hours);
   rtc.setMinutes(minutes);
   rtc.setSeconds(seconds);
+  rtc.setDate(day, month, year);
 
   // initialize LCDs
   lcd.init_lcd();
@@ -1133,6 +1383,8 @@ void setup() {
   // set button 3 (top right) to open main menu
   // set to FALLING because RISING would often trigger the interrupt but not actually run the ISR,
   // leading to systemw-wide clock delays
+  LowPower.attachInterruptWakeup(btn1, showDateInt, FALLING);
+  LowPower.attachInterruptWakeup(btn2, actionInt, FALLING); // BTN2 is the "action buttton", programmable
   LowPower.attachInterruptWakeup(btn3, menuInt, FALLING);
 
   // disable all unnecessary peripherals
@@ -1168,31 +1420,14 @@ void setup() {
     sysCheck();
   }
   menuActive = false; // for some reason starter() triggers menuInt(), so I need this to prevent the watch from booting straight into the menu
+  showDateActive = false; // same reason
+  actionActive = false;
 }
 
 // main function
 void loop() {
-  //alwaysOnDisplay();
-  wakeToCheck();
-
-	// bme68xData data;
-
-	// bme.setOpMode(BME68X_FORCED_MODE);
-	// delayMicroseconds(bme.getMeasDur());
-
-	// if (bme.fetchData())
-	// {
-	// 	bme.getData(data);
-  //   int temp = (int)data.temperature;
-  //   int hum = (int)data.humidity;
-	// 	lcd.dispDec(temp, 0);
-  //   lcd.dispDec(hum, 1);
-	// 	Serial.print(String(data.temperature) + ", ");
-	// 	Serial.print(String(data.pressure) + ", ");
-	// 	Serial.print(String(data.humidity) + ", ");
-	// 	Serial.print(String(data.gas_resistance) + ", ");
-	// 	Serial.println(data.status, HEX);
-	// }
+  alwaysOnDisplay();
+  // wakeToCheck();
 }
 
 // code to use later for checking BME status

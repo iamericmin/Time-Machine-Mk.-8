@@ -60,7 +60,7 @@ static uint8_t Segs[] =
 	0x3B, // K - can't do
 	0x2C, // L
 	0x5A, // M - can't do
-	0x1A, // n
+	0x6B, // n
 	0x6F, // O
 	0x79, // P
 	0x73, // Q
@@ -290,7 +290,7 @@ void CDM4101::dispStrTimed(char *s, bool disp)
 void CDM4101::dispDec(short n, bool disp)
 {
 	uint8_t i;
-	char  str[5];
+	char str[5];
 
 	if(n < -999L) n = -999L;
 	if(n > 9999L) n = 9999L;

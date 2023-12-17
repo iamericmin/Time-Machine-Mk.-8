@@ -27,7 +27,7 @@ Button 4: top left. cancel/exit
 #include <time.h>
 
 #define INACTIVITY_TIMEOUT 2000 // inactivity threshold of 2 seconds
-#define BUTTON_DELAY 200 // delay between button readings for scrolling, long press, etc.
+#define BUTTON_DELAY 100 // delay between button readings for scrolling, long press, etc.
 #define LCD_ADDRESS 0x38
 #define FUEL_ADDRESS 0x36
 #define ACCEL_ADDRESS 0x18
@@ -81,7 +81,7 @@ uint8_t minutes = 0;
 uint8_t hours = 0;
 uint16_t year = 23;
 uint8_t month = 12;
-uint8_t day = 29;
+uint8_t day = 17;
 
 /*
 Main menu interrupt handler.
@@ -1028,141 +1028,150 @@ uint8_t starter() {
     }
   }
   uint16_t cnt = 0;
+  uint8_t firingAnimCount = 0;
+  int firingDelay = 50;
   while(1) {
-    if (!digitalRead(btn1)) {
-      if (!digitalRead(btn3)) {
-        while(!digitalRead(btn3)) {
-          cnt++;
-          tone(9, cnt * 20 + 500);
-          uint8_t graph = cnt / 40;
-          switch (graph) {
-            case 0:
-              lcd.dispStr("", 0);
-              lcd.dispStr("", 1);
-              break;
-            case 1:
-              lcd.dispStr("8", 0);
-              lcd.dispStr("", 1);
-              break;
-            case 2:
-              lcd.dispStr("88", 0);
-              lcd.dispStr("", 1);
-              break;
-            case 3:
-              lcd.dispStr("888", 0);
-              lcd.dispStr("", 1);
-              break;
-            case 4:
-              lcd.dispStr("8888", 0);
-              lcd.dispStr("", 1);
-              break;
-            case 5:
-              lcd.dispStr("8888", 0);
-              lcd.dispStr("8", 1);
-              break;
-            case 6:
-              lcd.dispStr("8888", 0);
-              lcd.dispStr("88", 1);
-              break;
-            case 7:
-              lcd.dispStr("8888", 0);
-              lcd.dispStr("888", 1);
-              break;
-            case 8:
-              lcd.dispStr("8888", 0);
-              lcd.dispStr("8888", 1);
-              break;
-          }
-          if (cnt == 320) {
-            delay(50);
-            for (int i=0; i<5; i++) {
-              lcd.dispStr("8888", 0);
-              lcd.dispStr("8888", 1);
-              tone(9, 4000);
-              delay(60);
-              lcd.dispStr("", 0);
-              lcd.dispStr("", 1);
-              noTone(9);
-              delay(60);
-            }
-            noTone(9);
-            return 0;
-          }
+    if (!digitalRead(btn3) && !digitalRead(btn1)) {
+      while(!digitalRead(btn3) && !digitalRead(btn1)) {
+        cnt++;
+        tone(9, cnt * 20 + 500);
+        uint8_t graph = cnt / 40;
+        switch (graph) {
+          case 0:
+            lcd.dispStr("", 0);
+            lcd.dispStr("", 1);
+            break;
+          case 1:
+            lcd.dispStr("8", 0);
+            lcd.dispStr("", 1);
+            break;
+          case 2:
+            lcd.dispStr("88", 0);
+            lcd.dispStr("", 1);
+            break;
+          case 3:
+            lcd.dispStr("888", 0);
+            lcd.dispStr("", 1);
+            break;
+          case 4:
+            lcd.dispStr("8888", 0);
+            lcd.dispStr("", 1);
+            break;
+          case 5:
+            lcd.dispStr("8888", 0);
+            lcd.dispStr("8", 1);
+            break;
+          case 6:
+            lcd.dispStr("8888", 0);
+            lcd.dispStr("88", 1);
+            break;
+          case 7:
+            lcd.dispStr("8888", 0);
+            lcd.dispStr("888", 1);
+            break;
+          case 8:
+            lcd.dispStr("8888", 0);
+            lcd.dispStr("8888", 1);
+            break;
         }
-      } else {
-        while(digitalRead(btn3) && cnt > 0) {
-          cnt--;
-          tone(9, cnt * 20 + 500);
-          uint8_t graph = cnt / 50;
-          switch (graph) {
-            case 0:
-              lcd.dispStr("", 0);
-              lcd.dispStr("", 1);
-              break;
-            case 1:
-              lcd.dispStr("8", 0);
-              lcd.dispStr("", 1);
-              break;
-            case 2:
-              lcd.dispStr("88", 0);
-              lcd.dispStr("", 1);
-              break;
-            case 3:
-              lcd.dispStr("888", 0);
-              lcd.dispStr("", 1);
-              break;
-            case 4:
-              lcd.dispStr("8888", 0);
-              lcd.dispStr("", 1);
-              break;
-            case 5:
-              lcd.dispStr("8888", 0);
-              lcd.dispStr("8", 1);
-              break;
-            case 6:
-              lcd.dispStr("8888", 0);
-              lcd.dispStr("88", 1);
-              break;
-            case 7:
-              lcd.dispStr("8888", 0);
-              lcd.dispStr("888", 1);
-              break;
-            case 8:
-              lcd.dispStr("8888", 0);
-              lcd.dispStr("8888", 1);
-              break;
+        if (cnt == 320) {
+          delay(50);
+          for (int i=0; i<5; i++) {
+            lcd.dispStr("8888", 0);
+            lcd.dispStr("8888", 1);
+            tone(9, 4000);
+            delay(60);
+            lcd.dispStr("", 0);
+            lcd.dispStr("", 1);
+            noTone(9);
+            delay(60);
           }
+          noTone(9);
+          return 0;
+        }
+      }
+    } else if (digitalRead(btn3) || digitalRead(btn1) && cnt < 0) {
+      while(cnt > 0) {
+        cnt--;
+        tone(9, cnt * 20 + 500);
+        uint8_t graph = cnt / 50;
+        switch (graph) {
+          case 0:
+            lcd.dispStr("", 0);
+            lcd.dispStr("", 1);
+            break;
+          case 1:
+            lcd.dispStr("8", 0);
+            lcd.dispStr("", 1);
+            break;
+          case 2:
+            lcd.dispStr("88", 0);
+            lcd.dispStr("", 1);
+            break;
+          case 3:
+            lcd.dispStr("888", 0);
+            lcd.dispStr("", 1);
+            break;
+          case 4:
+            lcd.dispStr("8888", 0);
+            lcd.dispStr("", 1);
+            break;
+          case 5:
+            lcd.dispStr("8888", 0);
+            lcd.dispStr("8", 1);
+            break;
+          case 6:
+            lcd.dispStr("8888", 0);
+            lcd.dispStr("88", 1);
+            break;
+          case 7:
+            lcd.dispStr("8888", 0);
+            lcd.dispStr("888", 1);
+            break;
+          case 8:
+            lcd.dispStr("8888", 0);
+            lcd.dispStr("8888", 1);
+            break;
+        }
+        if (cnt <= 10) {
+          noTone(9);
         }
       }
     }
-    //uint8_t firingOrder[] = {1, 5, 3, 7, 4, 8, 2, 6};
     if (digitalRead(btn3) && cnt == 0) {
+      firingAnimCount++;
       for (int i=0; i<8; i++) {
         uint8_t index = firingOrder[i] - 1;
         if (index >= 4) {
           lcd.dispChar(index - 4, '-', 1);
-          delay(50);
-          lcd.dispChar(index - 4, 'K', 1);
-          delay(50);
+          delay(firingDelay);
+          lcd.dispCharRaw(index - 4, 0x3B, 1);
+          delay(firingDelay);
           lcd.dispChar(index - 4, '0', 1);
-          delay(50);
+          delay(firingDelay);
           lcd.dispCharRaw(index - 4, 0x44, 1);
-          delay(50);
+          delay(firingDelay);
           lcd.Command(CDM4101_CLEAR, 1);
-          delay(50);
+          delay(firingDelay);
         } else {
           lcd.dispChar(index, '-', 0);
-          delay(50);
-          lcd.dispChar(index, 'K', 0);
-          delay(50);
+          delay(firingDelay);
+          lcd.dispCharRaw(index, 0x3B, 0);
+          delay(firingDelay);
           lcd.dispChar(index, '0', 0);
-          delay(50);
+          delay(firingDelay);
           lcd.dispCharRaw(index, 0x44, 0);
-          delay(50);
+          delay(firingDelay);
           lcd.Command(CDM4101_CLEAR, 0);
-          delay(50);
+          delay(firingDelay);
         }
       }
+    }
+    if (firingAnimCount >= 3) {
+      lcd.dispStr("OVTA", 0);
+      lcd.dispStr("TIME", 1);
+      firingAnimCount = 0;
+      LowPower.deepSleep();
     }
   }
 }
@@ -1414,7 +1423,7 @@ void setup() {
   lcd.dispStr(" set", 1);
   delay(50);
 
-  // if BTN4 isn't pressed, run starter() and second system init
+  //if BTN4 isn't pressed, run starter() and second system init
   if (readBtn4 || fuel.cellPercent() <= 10) {
     starter();
     sysCheck();
@@ -1427,19 +1436,4 @@ void setup() {
 // main function
 void loop() {
   alwaysOnDisplay();
-  // wakeToCheck();
 }
-
-// code to use later for checking BME status
-// if(bme.checkStatus())
-// {
-//   if (bme.checkStatus() == BME68X_ERROR)
-//   {
-//     Serial.println("Sensor error:" + bme.statusString());
-//     return;
-//   }
-//   else if (bme.checkStatus() == BME68X_WARNING)
-//   {
-//     Serial.println("Sensor Warning:" + bme.statusString());
-//   }
-// }

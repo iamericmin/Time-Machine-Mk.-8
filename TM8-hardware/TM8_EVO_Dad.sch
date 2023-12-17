@@ -22162,6 +22162,19 @@ I2C</description>
 <wire x1="168.91" y1="116.84" x2="157.48" y2="116.84" width="0.1524" layer="91"/>
 <label x="157.48" y="116.84" size="1.778" layer="95"/>
 </segment>
+<segment>
+<pinref part="IC2" gate="G$1" pin="A2"/>
+<pinref part="IC2" gate="G$1" pin="A0"/>
+<wire x1="198.12" y1="119.38" x2="198.12" y2="121.92" width="0.1524" layer="91"/>
+<pinref part="IC2" gate="G$1" pin="A1"/>
+<wire x1="198.12" y1="121.92" x2="198.12" y2="124.46" width="0.1524" layer="91"/>
+<junction x="198.12" y="121.92"/>
+<wire x1="198.12" y1="119.38" x2="205.74" y2="119.38" width="0.1524" layer="91"/>
+<junction x="198.12" y="119.38"/>
+<label x="201.93" y="119.38" size="1.778" layer="95"/>
+<pinref part="IC2" gate="G$1" pin="WP"/>
+<wire x1="198.12" y1="114.3" x2="198.12" y2="119.38" width="0.1524" layer="91"/>
+</segment>
 </net>
 <net name="LED2" class="0">
 <segment>

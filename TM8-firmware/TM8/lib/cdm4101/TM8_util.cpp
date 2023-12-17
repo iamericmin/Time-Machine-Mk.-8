@@ -8,27 +8,45 @@
 #include "Wire.h"
 #include "wiring_private.h"
 
-#include "cdm4101.h"
+#include "TM8_util.h"
+
+#include <Arduino.h>
+#include <RTCZero.h>
+#include <Adafruit_MAX1704X.h>
+#include <ArduinoLowPower.h>
+#include <SparkFunLIS3DH.h>
+#include <bme68xLibrary.h>
+#include <SparkFun_External_EEPROM.h>
+#include <time.h>
 
 //----------------------------------------------------------------------------
-TwoWire lcdBus2(&sercom2, 4, 3); //set up second I2C bus
+TwoWire wireTwo(&sercom2, 4, 3); //set up second I2C bus
 
+/*
+LCD specific defines
+*/
 #define I2C_ADDR	(0x38) //hard-wired I2C address of LCD
-
 #define CMD_MODE_SET	0xCD
 #define CMD_LOAD_DP		0x80
 #define CMD_DEVICE_SEL	0xE0
 #define CMD_BANK_SEL	0xF8
 #define CMD_NOBLINK		0x70
 #define CMD_BLINK		0x71
-
 #define DASH            10
 #define UNDERSCORE      11
 #define SPACE           12
 #define ASTERISK        39
 #define ALPHA_START     13
-
 #define HOLD_TIME   8
+
+/*
+TM8 hardware definitions
+*/
+#define LCD_ADDRESS 0x38
+#define FUEL_ADDRESS 0x36
+#define ACCEL_ADDRESS 0x18
+#define BME_ADDRESS 0x76
+#define ROM_ADDRESS 0x50
 
 //----------------------------------------------------------------------------
 
@@ -76,9 +94,7 @@ static uint8_t Segs[] =
 	0x01, // ° - use * to represent it in your string
 };
 
-//----------------------------------------------------------------------------
-
-void CDM4101::Update(bool disp) // if disp is 0, left LCD. if 1, right LCD.
+void TM8_util::Update(bool disp) // if disp is 0, left LCD. if 1, right LCD.
 {
 	char data[5]; // bytes to send display segments
 
@@ -117,15 +133,15 @@ void CDM4101::Update(bool disp) // if disp is 0, left LCD. if 1, right LCD.
 
     Wire.endTransmission();
   } else if (disp) {
-    lcdBus2.beginTransmission(I2C_ADDR);
-    lcdBus2.write(CMD_MODE_SET);
-    lcdBus2.write(CMD_LOAD_DP);
-    lcdBus2.write(CMD_DEVICE_SEL);
-    lcdBus2.write(CMD_BANK_SEL);
+    wireTwo.beginTransmission(I2C_ADDR);
+    wireTwo.write(CMD_MODE_SET);
+    wireTwo.write(CMD_LOAD_DP);
+    wireTwo.write(CMD_DEVICE_SEL);
+    wireTwo.write(CMD_BANK_SEL);
 
 
-    if(Blink) lcdBus2.write(CMD_BLINK);
-    else      lcdBus2.write(CMD_NOBLINK);
+    if(Blink) wireTwo.write(CMD_BLINK);
+    else      wireTwo.write(CMD_NOBLINK);
 
   #if 1
     data[0] = (Digits[0] >> 4); // || LCD_BAR
@@ -134,22 +150,20 @@ void CDM4101::Update(bool disp) // if disp is 0, left LCD. if 1, right LCD.
     data[3] = (Digits[2] << 6) | (Digits[3] >> 1);
     data[4] = (Digits[3] << 7);
   #else
-    lcdBus2.write(0x70);
-    lcdBus2.write(0x3B);
-    lcdBus2.write(0xB5);
-    lcdBus2.write(0xD9);
-    lcdBus2.write(0x80);
+    wireTwo.write(0x70);
+    wireTwo.write(0x3B);
+    wireTwo.write(0xB5);
+    wireTwo.write(0xD9);
+    wireTwo.write(0x80);
   #endif
 
-    for(int i=0;i<5;i++) lcdBus2.write(data[i]);
+    for(int i=0;i<5;i++) wireTwo.write(data[i]);
 
-    lcdBus2.endTransmission();
+    wireTwo.endTransmission();
   }
 }
 
-//----------------------------------------------------------------------------
-
-void CDM4101::init_lcd(void)
+void TM8_util::init_lcd(void)
 {
 	Blink = 0;
 
@@ -172,40 +186,38 @@ void CDM4101::init_lcd(void)
 
 	Wire.endTransmission();
   
-	lcdBus2.beginTransmission(I2C_ADDR);
-	lcdBus2.write(CMD_MODE_SET);
-	lcdBus2.write(CMD_LOAD_DP);
-	lcdBus2.write(CMD_DEVICE_SEL);
-	lcdBus2.write(CMD_BANK_SEL);
-	lcdBus2.write(CMD_NOBLINK);
-	lcdBus2.write(0x05);
-	lcdBus2.write(0xD5);
-	lcdBus2.write(0x9B);
-	lcdBus2.write(0xFF);
-	lcdBus2.write(0x00);
+	wireTwo.beginTransmission(I2C_ADDR);
+	wireTwo.write(CMD_MODE_SET);
+	wireTwo.write(CMD_LOAD_DP);
+	wireTwo.write(CMD_DEVICE_SEL);
+	wireTwo.write(CMD_BANK_SEL);
+	wireTwo.write(CMD_NOBLINK);
+	wireTwo.write(0x05);
+	wireTwo.write(0xD5);
+	wireTwo.write(0x9B);
+	wireTwo.write(0xFF);
+	wireTwo.write(0x00);
 
-	lcdBus2.endTransmission();
+	wireTwo.endTransmission();
 
 	Ctr = 0;
 }
 
-//----------------------------------------------------------------------------
-
-void CDM4101::Command(uint8_t cmd, bool disp)
+void TM8_util::Command(uint8_t cmd, bool disp)
 {
 	switch(cmd)
 	{
-		case CDM4101_BLINK_OFF :
+		case LCD_BLINK_OFF :
 			Blink = 0;
 			Update(disp);
 			break;
 
-		case CDM4101_BLINK_ON :
+		case LCD_BLINK_ON :
 			Blink = 1;
 			Update(disp);
 			break;
 
-		case CDM4101_CLEAR :
+		case LCD_CLEAR :
 			Digits[0] = Segs[SPACE];
 			Digits[1] = Segs[SPACE];
 			Digits[2] = Segs[SPACE];
@@ -219,9 +231,7 @@ void CDM4101::Command(uint8_t cmd, bool disp)
 	}
 }
 
-//----------------------------------------------------------------------------
-
-char CDM4101::ConvertChar(char c)
+char TM8_util::ConvertChar(char c)
 {
 	if((c >= 'a') && (c <= 'z')) c = c - 'a' + ALPHA_START;
 	else
@@ -238,29 +248,23 @@ char CDM4101::ConvertChar(char c)
 	return c;
 }
 
-//----------------------------------------------------------------------------
-
-void CDM4101::dispChar(uint8_t index, char c, bool disp)
+void TM8_util::dispChar(uint8_t index, char c, bool disp)
 {
 	Digits[(int)index] = Segs[(int)(ConvertChar(c))];
 	Update(disp);
 }
 
-//----------------------------------------------------------------------------
-
-void CDM4101::dispCharRaw(uint8_t index, char c, bool disp)
+void TM8_util::dispCharRaw(uint8_t index, char c, bool disp)
 {
 	Digits[(int)index] = c;
 	Update(disp);
 }
 
-//----------------------------------------------------------------------------
-
-void CDM4101::dispStr(const char *s, bool disp)
+void TM8_util::dispStr(const char *s, bool disp)
 {
 	uint8_t i,c;
 
-	for(i=0;i<CDM4101_NUM_DIGITS;i++) Digits[i] = Segs[SPACE];
+	for(i=0;i<LCD_NUM_DIGITS;i++) Digits[i] = Segs[SPACE];
 
 	i = 0;
 
@@ -275,19 +279,13 @@ void CDM4101::dispStr(const char *s, bool disp)
 	Update(disp);
 }
 
-//----------------------------------------------------------------------------
-
-void CDM4101::dispStrTimed(char *s, bool disp)
+void TM8_util::dispStrTimed(char *s, bool disp)
 {
 	dispStr(s, disp);
 	Ctr = HOLD_TIME;
 }
 
-
-//----------------------------------------------------------------------------
-// display a decimal value, right justified.
-
-void CDM4101::dispDec(short n, bool disp)
+void TM8_util::dispDec(short n, bool disp)
 {
 	uint8_t i;
 	char str[5];
@@ -308,4 +306,21 @@ void CDM4101::dispDec(short n, bool disp)
 	dispStr(str, disp);
 }
 
-//----------------------------------------------------------------------------
+/*
+Little helper function for various animations
+*/
+void TM8_util::blinkGo(bool isGo) {
+  for (int i=0; i<5; i++) {
+    dispStr("    ", 1);
+    noTone(9);
+    delay(30);
+    for (int i=0; i<4; i++) {
+      dispCharRaw(i, 0x54, 1);
+    }
+    tone(9, random(1, 7) * 1000);
+    delay(30);
+  }
+  isGo ? dispStr(" GO ", 1) : dispStr("Err ", 1);
+  noTone(9);
+  delay(500);
+}

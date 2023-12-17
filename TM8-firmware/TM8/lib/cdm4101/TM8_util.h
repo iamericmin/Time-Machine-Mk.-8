@@ -1,23 +1,23 @@
-#ifndef _CDM4101_H_
-#define _CDM4101_H_
+#ifndef _TM8_UTIL_H_
+#define _TM8_UTIL_H_
 
 #include <inttypes.h>
 
 //----------------------------------------------------------------------------
 
-#define CDM4101_NUM_DIGITS  4
-#define CDM4101_NUM_SEGS 40
+#define LCD_NUM_DIGITS  4
+#define LCD_NUM_SEGS 40
 
 //----------------------------------------------------------------------------
 // LCD commands.
 
-#define CDM4101_BLINK_OFF 6
-#define CDM4101_BLINK_ON  7
-#define CDM4101_CLEAR     8
+#define LCD_BLINK_OFF 6
+#define LCD_BLINK_ON  7
+#define LCD_CLEAR     8
 
 //----------------------------------------------------------------------------
 
-class CDM4101
+class TM8_util
 {
 public:
 	void init_lcd(void);
@@ -27,9 +27,10 @@ public:
 	void dispStr(const char *s, bool disp);
 	void dispStrTimed(char *s, bool disp);
 	void dispDec(short n, bool disp);
+  void blinkGo(bool isGo);
 
-  uint8_t Digits[CDM4101_NUM_DIGITS];
-  //uint8_t Segs[CDM4101_NUM_SEGS];
+  uint8_t Digits[LCD_NUM_DIGITS];
+  //uint8_t Segs[LCD_NUM_SEGS];
 
 	void Update(bool);
 	char ConvertChar(char c);
@@ -40,4 +41,4 @@ public:
 
 //----------------------------------------------------------------------------
 
-#endif // _CDM4101_H_
+#endif // _TM8_UTIL_H_

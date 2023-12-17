@@ -4,7 +4,7 @@
  / / / /  ' \/ -_) / /|_/ / _ `/ __/ _ \/ / _ \/ -_) / /|_/ /  '_/   / _  |
 /_/ /_/_/_/_/\__/ /_/  /_/\_,_/\__/_//_/_/_//_/\__/ /_/  /_/_/\_(_)  \___/ 
 TIME MACHINE MK. 8
-MIN WORKS 2023
+MIN WORKS 2024
 @designedbyericmin
 
 GENERAL RULE OF THUMB:
@@ -17,7 +17,6 @@ Button 4: top left. cancel/exit
 #include <Arduino.h>
 #include <Wire.h>
 #include "wiring_private.h" // pinPeripheral() function
-#include <cdm4101.h>
 #include <RTCZero.h>
 #include <Adafruit_MAX1704X.h>
 #include <ArduinoLowPower.h>
@@ -25,6 +24,7 @@ Button 4: top left. cancel/exit
 #include <bme68xLibrary.h>
 #include <SparkFun_External_EEPROM.h>
 #include <time.h>
+#include <TM8_util.h>
 
 #define INACTIVITY_TIMEOUT 2000 // inactivity threshold of 2 seconds
 #define BUTTON_DELAY 100 // delay between button readings for scrolling, long press, etc.
@@ -35,13 +35,13 @@ Button 4: top left. cancel/exit
 #define ROM_ADDRESS 0x50
 
 TwoWire wire1(&sercom2, 4, 3); // new Wire object to set up second I2C port on SERCOM 2
-CDM4101 lcd; // LCD object
 RTCZero rtc; // RTC object
 Adafruit_MAX17048 fuel;
 LIS3DH accel(I2C_MODE, 0x18);
 Bme68x bme;
 bme68xData BMEData;
 ExternalEEPROM rom;
+TM8_util TM8;
 
 const uint8_t btn1 = 2; // top left button
 const uint8_t btn2 = 38; // bottom left button
@@ -54,6 +54,9 @@ uint8_t leds[] = {7, A3, A1, 8, 5};
 // I found after lots of trial and error this is the only way to get TM8 to read PA12
 // without the whole thing freezing or acting up
 // returns 0 when closed, 1 when open
+#define readBtn1 (PORT->Group[0].IN.reg & (1 << 14))
+#define readBtn2 (PORT->Group[0].IN.reg & (1 << 13))
+#define readBtn3 (PORT->Group[1].IN.reg & (1 << 11))
 #define readBtn4 (PORT->Group[0].IN.reg & (1 << 12))
 
 bool menuActive = false; // main Menu ISR handler variable,
@@ -114,18 +117,18 @@ uint8_t swipeDown[10] = {0x40, 0x61, 0x71, 0x7B, 0x7F, 0x3F, 0x1E, 0x0E, 0x04, 0
 void animSwipeDown(uint8_t animDelay) {
   for (int i=0; i<10; i++) {
     for (int d=0; d<4; d++) {
-      lcd.Digits[d] = swipeDown[i];
+      TM8.Digits[d] = swipeDown[i];
     }
-    lcd.Update(0);
-    lcd.Update(1);
+    TM8.Update(0);
+    TM8.Update(1);
     delay(animDelay);
   }
 }
 
 void scrambleAnim(uint8_t cnt, uint8_t animDelay) {
   for (int i=0; i<cnt; i++) {
-    lcd.dispDec(random() % 9000 + 1000, 0);
-    lcd.dispDec(random() % 9000 + 1000, 1);
+    TM8.dispDec(random() % 9000 + 1000, 0);
+    TM8.dispDec(random() % 9000 + 1000, 1);
     delay(animDelay);
   }
 }
@@ -144,19 +147,19 @@ void animTach() {
   }
   for (int i=0; i<7; i++) { // for each frame of tachInit[] animation
     for (int d=0; d<4; d++) { // display on all digits
-      lcd.Digits[d] = tachInit[i]; 
+      TM8.Digits[d] = tachInit[i]; 
     }
-    lcd.Update(0); // update both LCDs
-    lcd.Update(1);
+    TM8.Update(0); // update both LCDs
+    TM8.Update(1);
     delay(80);
   }
   delay(250);
   for (int i=6; i>=0; i--) { // like above, but opposite
     for (int d=0; d<4; d++) {
-      lcd.Digits[d] = tachInit[i];
+      TM8.Digits[d] = tachInit[i];
     }
-    lcd.Update(0);
-    lcd.Update(1);
+    TM8.Update(0);
+    TM8.Update(1);
     delay(80);
   }
   for (int i=4; i>=0; i--) { // Turns off all LEDs in a totally new random order.
@@ -169,21 +172,10 @@ void animTach() {
   }
 }
 
-// simple animation for system check/bootup animation
-void blinkGo(bool isGo) {
-  for (int i=0; i<5; i++) {
-    lcd.dispStr("    ", 1);
-    noTone(9);
-    delay(30);
-    for (int i=0; i<4; i++) {
-      lcd.dispCharRaw(i, 0x54, 1);
-    }
-    tone(9, random(1, 7) * 1000);
-    delay(30);
+void blinkMsg(const char * msg, uint8_t blinkDelay, bool sound, uint8_t reps) {
+  for (int i=0; i<reps; i++) {
+    TM8.dispStr("    ", 1);
   }
-  isGo ? lcd.dispStr(" GO ", 1) : lcd.dispStr("Err ", 1);
-  noTone(9);
-  delay(500);
 }
 
 /*
@@ -193,52 +185,52 @@ void sysCheck() {
   animTach(); // vintage tachometer animation
   uint8_t deviceCount = 0; // total number of devices detected. Increments with each device detected. Should be 5.
 
-  lcd.dispStr("LCDR", 0);
+  TM8.dispStr("LCDR", 0);
   wire1.beginTransmission(LCD_ADDRESS);
-  blinkGo(!Wire.endTransmission()); deviceCount++;
+  TM8.blinkGo(!Wire.endTransmission()); deviceCount++;
 
-  lcd.dispStr("LCDL", 0);
+  TM8.dispStr("LCDL", 0);
   Wire.beginTransmission(LCD_ADDRESS);
-  blinkGo(!wire1.endTransmission()); deviceCount++;
+  TM8.blinkGo(!wire1.endTransmission()); deviceCount++;
 
-  lcd.dispStr("FUEL", 0);
+  TM8.dispStr("FUEL", 0);
   Wire.beginTransmission(FUEL_ADDRESS);
-  blinkGo(!Wire.endTransmission()); deviceCount++;
+  TM8.blinkGo(!Wire.endTransmission()); deviceCount++;
 
-  lcd.dispStr("ACCL", 0);
+  TM8.dispStr("ACCL", 0);
   wire1.beginTransmission(ACCEL_ADDRESS);
-  blinkGo(!wire1.endTransmission()); deviceCount++;
+  TM8.blinkGo(!wire1.endTransmission()); deviceCount++;
 
-  lcd.dispStr("TEMP", 0);
+  TM8.dispStr("TEMP", 0);
   wire1.beginTransmission(BME_ADDRESS);
-  blinkGo(!wire1.endTransmission()); deviceCount++;
+  TM8.blinkGo(!wire1.endTransmission()); deviceCount++;
 
   delay(750);
   if (deviceCount == 5) { // if all devices detected
-    lcd.dispStr("", 1);
-    lcd.dispStr("All ", 0);
+    TM8.dispStr("", 1);
+    TM8.dispStr("All ", 0);
     tone(9, 2000, 100);
     delay(500);
-    lcd.dispStr("Syst", 0);
-    lcd.dispStr("ems", 1);
+    TM8.dispStr("Syst", 0);
+    TM8.dispStr("ems", 1);
     tone(9, 2000, 100);
     delay(500);
-    lcd.dispStr("", 1);
+    TM8.dispStr("", 1);
     for (int i=0; i<7; i++) {
-      lcd.dispStr(" GO ", 0);
+      TM8.dispStr(" GO ", 0);
       tone(9, 4000);
       delay(75);
-      lcd.dispStr("", 0);
+      TM8.dispStr("", 0);
       noTone(9);
       delay(75);
     }
   } else { // if a different number of devices detected
     for (int i=0; i<5; i++) {
-      lcd.dispStr(" Err", 0);
-      lcd.dispStr("or  ", 1);
+      TM8.dispStr(" Err", 0);
+      TM8.dispStr("or  ", 1);
       delay(500);
-      lcd.dispStr("dcnt", 0);
-      lcd.dispDec(deviceCount, 1); // show number of devices detected
+      TM8.dispStr("dcnt", 0);
+      TM8.dispDec(deviceCount, 1); // show number of devices detected
       delay(500);
     }
   }
@@ -260,17 +252,17 @@ bool setTime() {
   uint8_t minuteTens = 0; // minute tens digit
   uint8_t minuteOnes = 0; // minute ones digit
   bool ampm = 0; // 0 for AM, 1 for PM
-  lcd.dispStr("hour", 1); // indicate hour set mode
-  while(digitalRead(btn3)) { // until btn4 is pressed
-    lcd.dispDec(hourTens * 10 + hourOnes, 0); // display hour value to set
-    if (!digitalRead(btn1)) { // btn1 increments tens digit
+  TM8.dispStr("hour", 1); // indicate hour set mode
+  while(readBtn3) { // until btn4 is pressed
+    TM8.dispDec(hourTens * 10 + hourOnes, 0); // display hour value to set
+    if (!readBtn1) { // btn1 increments tens digit
       hourTens++;
       if (hourTens > 2 || hourTens * 10 + hourOnes > 23) { // prevent overflow to stay within 0-23
         hourTens = 0;
       }
       delay(BUTTON_DELAY);
     }
-    if (!digitalRead(btn2)) { // btn2 increments ones digit
+    if (!readBtn2) { // btn2 increments ones digit
       hourOnes++;
       if (hourOnes > 9 || hourTens * 10 + hourOnes > 23) { // prevent overflow to stay within 0-23
         hourOnes = 0;
@@ -281,20 +273,20 @@ bool setTime() {
       return 0;
     }
   }
-  lcd.dispStr("hour", 0); // confirm hour has been set
-  lcd.dispStr(" set", 1);
+  TM8.dispStr("hour", 0); // confirm hour has been set
+  TM8.dispStr(" set", 1);
   delay(750);
-  lcd.dispStr(" min", 1); // indicate minute set mode
-  while(digitalRead(btn3)) { // until btn4 is pressed
-    lcd.dispDec(minuteTens * 10 + minuteOnes, 0); // display minute value to set
-    if (!digitalRead(btn1)) { // btn1 increments tens digit
+  TM8.dispStr(" min", 1); // indicate minute set mode
+  while(readBtn3) { // until btn4 is pressed
+    TM8.dispDec(minuteTens * 10 + minuteOnes, 0); // display minute value to set
+    if (!readBtn1) { // btn1 increments tens digit
       minuteTens++;
       if (minuteTens > 5 || minuteTens * 10 + minuteOnes > 59) { // prevent overflow to stay within 0-59
         minuteTens = 0;
       }
       delay(BUTTON_DELAY);
     }
-    if (!digitalRead(btn2)) { // btn2 increments ones digit
+    if (!readBtn2) { // btn2 increments ones digit
       minuteOnes++;
       if (minuteOnes > 9 || minuteTens * 10 + minuteOnes > 59) { // prevent overflow to stay within 0-59
         minuteOnes = 0;
@@ -305,30 +297,30 @@ bool setTime() {
   uint8_t hours = hourTens * 10 + hourOnes; // compute hour and minute values from selection
   uint8_t minutes = minuteTens * 10 + minuteOnes;
   if (hours > 23 || minutes > 59) { // error handling if hour/min values are beyond acceptable range, shouldn't happen tho
-    lcd.dispStr(" Err", 0);
-    lcd.dispStr("or  ", 1);
+    TM8.dispStr(" Err", 0);
+    TM8.dispStr("or  ", 1);
     delay(1000);
     return 0; // quit setTime()
   }
   // for some reason, doesn't work properly without the next three lines
-  lcd.dispDec(hours, 0);
-  lcd.dispDec(minutes, 1);
+  TM8.dispDec(hours, 0);
+  TM8.dispDec(minutes, 1);
   delay(2000);
   if (hours > 12) { // if hour is set above 12, automatically set to PM
     ampm = 1;
   } else if (hours == 0) { // if hour is set to 0, automatically set to AM
     ampm = 0;
   } else if (hours <= 12) { // if hour is in 12H format(1-12), ask for AM/PM
-    while(digitalRead(btn3)) {
+    while(readBtn3) {
       if (ampm) {
-        lcd.dispStr(" PM ", 0);
+        TM8.dispStr(" PM ", 0);
       } else {
-        lcd.dispStr(" AM ", 0);
+        TM8.dispStr(" AM ", 0);
       }
-      if (!digitalRead(btn1)) { // btn1 sets time to AM
+      if (!readBtn1) { // btn1 sets time to AM
         ampm = 0; 
       }
-      if (!digitalRead(btn2)) { // btn2 sets to PM
+      if (!readBtn2) { // btn2 sets to PM
         ampm = 1;
       }
     }
@@ -343,15 +335,15 @@ bool setTime() {
   }
   rtc.setMinutes(minutes);
   rtc.setSeconds(0);
-  lcd.dispStr("time", 0);
-  lcd.dispStr(" set", 1);
+  TM8.dispStr("time", 0);
+  TM8.dispStr(" set", 1);
   delay(1000);
   for (int i=0; i<3; i++) {
-    lcd.dispStr("", 0);
-    lcd.dispStr("", 1);
+    TM8.dispStr("", 0);
+    TM8.dispStr("", 1);
     delay(50);
-    lcd.dispStr("time", 0);
-    lcd.dispStr("set", 1);
+    TM8.dispStr("time", 0);
+    TM8.dispStr("set", 1);
     delay(50);
   }
   return 1;
@@ -361,17 +353,17 @@ bool setDate() {
   uint8_t month = 12; // month value
   uint8_t dayTens = 2; // date tens digit
   uint8_t dayOnes = 9; // date ones digit
-  lcd.dispStr("mnth", 1); // indicate month set mode
-  while(digitalRead(btn3)) { // until btn4 is pressed
-    lcd.dispDec(month, 0); // display month value to set
-    if (!digitalRead(btn1)) { // btn1 increments month
+  TM8.dispStr("mnth", 1); // indicate month set mode
+  while(readBtn3) { // until btn4 is pressed
+    TM8.dispDec(month, 0); // display month value to set
+    if (!readBtn1) { // btn1 increments month
       month++;
       if (month > 12 || month < 1) { // prevent overflow to stay within 1-12
         month = 1;
       }
       delay(BUTTON_DELAY);
     }
-    if (!digitalRead(btn2)) { // btn1 increments month
+    if (!readBtn2) { // btn1 increments month
       month--;
       if (month > 12 || month < 1) { // prevent overflow to stay within 1-12
         month = 12;
@@ -382,20 +374,20 @@ bool setDate() {
       return 0;
     }
   }
-  lcd.dispStr("mnth", 0); // confirm month has been set
-  lcd.dispStr(" set", 1);
+  TM8.dispStr("mnth", 0); // confirm month has been set
+  TM8.dispStr(" set", 1);
   delay(750);
-  lcd.dispStr(" day", 1); // indicate day set mode
-  while(digitalRead(btn3)) { // until btn4 is pressed
-    lcd.dispDec(dayTens * 10 + dayOnes, 0); // display day value to set
-    if (!digitalRead(btn1)) { // btn1 increments tens digit
+  TM8.dispStr(" day", 1); // indicate day set mode
+  while(readBtn3) { // until btn4 is pressed
+    TM8.dispDec(dayTens * 10 + dayOnes, 0); // display day value to set
+    if (!readBtn1) { // btn1 increments tens digit
       dayTens++;
       if (dayTens > 3 || dayTens * 10 + dayOnes > 31) { // prevent overflow to stay within 0-31
         dayTens = 0;
       }
       delay(BUTTON_DELAY);
     }
-    if (!digitalRead(btn2)) { // btn2 increments ones digit
+    if (!readBtn2) { // btn2 increments ones digit
       dayOnes++;
       if (dayOnes > 9 || dayTens * 10 + dayOnes > 31) { // prevent overflow to stay within 0-31
         dayOnes = 0;
@@ -405,25 +397,25 @@ bool setDate() {
   }
   uint8_t date = dayTens * 10 + dayOnes;
   if (month > 12 || date > 31) { // error handling if hour/min values are beyond acceptable range, shouldn't happen tho
-    lcd.dispStr(" Err", 0);
-    lcd.dispStr("or  ", 1);
+    TM8.dispStr(" Err", 0);
+    TM8.dispStr("or  ", 1);
     delay(1000);
     return 0; // quit setTime()
   }
   // for some reason, doesn't work properly without the next three lines
-  lcd.dispDec(month, 0);
-  lcd.dispDec(date, 1);
+  TM8.dispDec(month, 0);
+  TM8.dispDec(date, 1);
   delay(2000);
   rtc.setDate(date, month, 23);
-  lcd.dispStr("date", 0);
-  lcd.dispStr(" set", 1);
+  TM8.dispStr("date", 0);
+  TM8.dispStr(" set", 1);
   delay(1000);
   for (int i=0; i<3; i++) {
-    lcd.dispStr("", 0);
-    lcd.dispStr("", 1);
+    TM8.dispStr("", 0);
+    TM8.dispStr("", 1);
     delay(50);
-    lcd.dispStr("date", 0);
-    lcd.dispStr("set", 1);
+    TM8.dispStr("date", 0);
+    TM8.dispStr("set", 1);
     delay(50);
   }
   return 1;
@@ -441,13 +433,13 @@ right when the chrono started. same for race chrono.
 */
 bool chronoGraph() {
   uint8_t chronoSplitsCounter = 0;
-  while(digitalRead(btn3)) { // start when button 3 is pressed
-    lcd.dispStr("btn3", 0);
-    lcd.dispStr("strt", 1);
+  while(readBtn3) { // start when button 3 is pressed
+    TM8.dispStr("btn3", 0);
+    TM8.dispStr("strt", 1);
     if (!readBtn4) { // press btn4 to quit
       return 0;
     }
-  } while(!digitalRead(btn3)); // start on rising edge to prevent split recording immediately
+  } while(!readBtn3); // start on rising edge to prevent split recording immediately
   uint32_t chronoStartTime = millis(); // time when chronograph started, in milliseconds
   uint32_t chronoMillis; // declare variable for elapsed time in milliseconds
   uint32_t chronoSeconds; // ...elapsed time in seconds
@@ -459,43 +451,43 @@ bool chronoGraph() {
     chronoMillis %= 1000; // compute elapsed milliseconds
     chronoSeconds %= 60; // compute elapsed seconds
     chronoMinutes %= 60; // compute elapsed minutes
-    lcd.dispDec(chronoMinutes * 100 + chronoSeconds, 0); // display elapsed time on LCD
-    lcd.dispDec(chronoMillis * 10 + chronoSplitsCounter, 1); // display elapsed milliseconds + split record slot on the right
-    if (!digitalRead(btn3) && chronoSplitsCounter < 10) { // if button 3 is pressed and split record space is available
-      while(!digitalRead(btn3)) {digitalWrite(led5, 1);} // show split time & light up LED5 while btn3 is depressed
+    TM8.dispDec(chronoMinutes * 100 + chronoSeconds, 0); // display elapsed time on LCD
+    TM8.dispDec(chronoMillis * 10 + chronoSplitsCounter, 1); // display elapsed milliseconds + split record slot on the right
+    if (!readBtn3 && chronoSplitsCounter < 10) { // if button 3 is pressed and split record space is available
+      while(!readBtn3) {digitalWrite(led5, 1);} // show split time & light up LED5 while btn3 is depressed
       digitalWrite(led5, 0); // turn off LED5
-      lcd.dispDec(chronoMinutes * 100 + chronoSeconds, 0); // display split time
-      lcd.dispDec(chronoMillis * 10 + chronoSplitsCounter, 1);
+      TM8.dispDec(chronoMinutes * 100 + chronoSeconds, 0); // display split time
+      TM8.dispDec(chronoMillis * 10 + chronoSplitsCounter, 1);
       chronoSplits[chronoSplitsCounter] = chronoMinutes * 100000 + chronoSeconds * 1000 + chronoMillis;
       Serial.print(chronoSplits[chronoSplitsCounter]); // debug messages
       Serial.println(chronoSplitsCounter);
       chronoSplitsCounter++; // increment chronoSplitsCounter
     }
-    if (!digitalRead(btn1)) { // if btn1 is pressed
-      while(!digitalRead(btn1)) {
-        lcd.dispDec(rtc.getHours() * 100 + rtc.getMinutes(), 0); // display current time
-        lcd.dispDec(rtc.getSeconds(), 1);
+    if (!readBtn1) { // if btn1 is pressed
+      while(!readBtn1) {
+        TM8.dispDec(rtc.getHours() * 100 + rtc.getMinutes(), 0); // display current time
+        TM8.dispDec(rtc.getSeconds(), 1);
       }
     }
     // if (!readBtn4) {
     //   uint32_t millisBuffer = millis();
-    //   lcd.dispDec(chronoMinutes * 100 + chronoSeconds, 0); // display stopped chrono time
-    //   lcd.dispDec(chronoMillis * 10 + chronoSplitsCounter, 1);
+    //   TM8.dispDec(chronoMinutes * 100 + chronoSeconds, 0); // display stopped chrono time
+    //   TM8.dispDec(chronoMillis * 10 + chronoSplitsCounter, 1);
     //   while(readBtn4) {};
     //   chronoStartTime = chronoStartTime - millisBuffer;
     // }
   }
   // quit chronograph animation
   delay(1000);
-  lcd.dispStr("quit", 0);
-  lcd.dispStr("chro", 1);
+  TM8.dispStr("quit", 0);
+  TM8.dispStr("chro", 1);
   delay(1000);
   for (int i=0; i<3; i++) {
-    lcd.dispStr("quit", 0);
-    lcd.dispStr("chro", 1);
+    TM8.dispStr("quit", 0);
+    TM8.dispStr("chro", 1);
     delay(75);
-    lcd.dispStr("", 0);
-    lcd.dispStr("", 1);
+    TM8.dispStr("", 0);
+    TM8.dispStr("", 1);
     delay(75);
   }
   return 0;
@@ -523,28 +515,28 @@ Can only measure up to 9"59.999
 */
 bool raceChrono() {
   uint8_t raceSplitsCounter = 0;
-  while (digitalRead(btn3)) {
-    lcd.dispStr("trck", 0);
-    lcd.dispStr(tracks[trackSelection], 1);
-    if (!digitalRead(btn2)) {
+  while (readBtn3) {
+    TM8.dispStr("trck", 0);
+    TM8.dispStr(tracks[trackSelection], 1);
+    if (!readBtn2) {
       trackSelection--;
       if (trackSelection > 4) trackSelection = 4;
       delay(BUTTON_DELAY);
     }
-    else if (!digitalRead(btn1)) {
+    else if (!readBtn1) {
       trackSelection++;
       if (trackSelection > 4) trackSelection = 0;
       delay(BUTTON_DELAY);
     }
-  } while(!digitalRead(btn3)); // start on rising edge to prevent split recording immediately
+  } while(!readBtn3); // start on rising edge to prevent split recording immediately
   delay(BUTTON_DELAY);
-  while(digitalRead(btn3)) { // start when button 3 is pressed
-    lcd.dispStr("btn3", 0);
-    lcd.dispStr("strt", 1);
+  while(readBtn3) { // start when button 3 is pressed
+    TM8.dispStr("btn3", 0);
+    TM8.dispStr("strt", 1);
     if (!readBtn4) { // press btn4 to quit
       return 0;
     }
-  } while(!digitalRead(btn3)); // start on rising edge to prevent split recording immediately
+  } while(!readBtn3); // start on rising edge to prevent split recording immediately
   uint32_t raceStartTime = millis(); // time when chronograph started, in milliseconds
   uint32_t raceMillis; // declare variable for elapsed time in milliseconds
   uint32_t raceSeconds; // ...elapsed time in seconds
@@ -556,40 +548,40 @@ bool raceChrono() {
     raceMillis %= 1000; // compute elapsed milliseconds
     raceSeconds %= 60; // compute elapsed seconds
     raceMinutes %= 60; // compute elapsed minutes
-    lcd.dispDec(raceMinutes * 100 + raceSeconds, 0); // display elapsed time on LCD
-    lcd.dispDec(raceMillis * 10 + raceSplitsCounter, 1); // display elapsed milliseconds + split record slot on the right
-    if (!digitalRead(btn3) && raceSplitsCounter < 100) { // if button 3 is pressed and split record space is available.
-      while(!digitalRead(btn3)) {
+    TM8.dispDec(raceMinutes * 100 + raceSeconds, 0); // display elapsed time on LCD
+    TM8.dispDec(raceMillis * 10 + raceSplitsCounter, 1); // display elapsed milliseconds + split record slot on the right
+    if (!readBtn3 && raceSplitsCounter < 100) { // if button 3 is pressed and split record space is available.
+      while(!readBtn3) {
         digitalWrite(led5, 1); // show split time & light up LED5 while btn3 is depressed
-        lcd.dispDec(raceMinutes * 100 + raceSeconds, 0); // display split time
-        lcd.dispDec(raceMillis, 1);
+        TM8.dispDec(raceMinutes * 100 + raceSeconds, 0); // display split time
+        TM8.dispDec(raceMillis, 1);
       }
       digitalWrite(led5, 0); // turn off LED5
       float vavg = (distances[trackSelection]) / (float)((float)(millis() - raceStartTime) / 1000 / 3600);
-      lcd.dispDec((int)(vavg), 0);
-      lcd.dispDec(((vavg - (int)(vavg)) * 100), 1);
+      TM8.dispDec((int)(vavg), 0);
+      TM8.dispDec(((vavg - (int)(vavg)) * 100), 1);
       raceSplits[raceSplitsCounter] = raceMinutes * 100000 + raceSeconds * 1000 + raceMillis;
       raceSplitsCounter++; // increment raceSplitsCounter
       delay(2000);
     }
-    if (!digitalRead(btn1)) {
-      while(!digitalRead(btn1)) {
-        lcd.dispDec(rtc.getHours() * 100 + rtc.getMinutes(), 0);
-        lcd.dispDec(raceSplitsCounter, 1);
+    if (!readBtn1) {
+      while(!readBtn1) {
+        TM8.dispDec(rtc.getHours() * 100 + rtc.getMinutes(), 0);
+        TM8.dispDec(raceSplitsCounter, 1);
       }
     }
   }
   // quit chronograph animation
   delay(1000);
-  lcd.dispStr("quit", 0);
-  lcd.dispStr("race", 1);
+  TM8.dispStr("quit", 0);
+  TM8.dispStr("race", 1);
   delay(1000);
   for (int i=0; i<3; i++) {
-    lcd.dispStr("quit", 0);
-    lcd.dispStr("race", 1);
+    TM8.dispStr("quit", 0);
+    TM8.dispStr("race", 1);
     delay(75);
-    lcd.dispStr("", 0);
-    lcd.dispStr("", 1);
+    TM8.dispStr("", 0);
+    TM8.dispStr("", 1);
     delay(75);
   }
   return 0;
@@ -601,24 +593,24 @@ first prompts whether to retrieve records from chrono or race
 user selects btn1 for chrono, btn3 for race
 */
 uint8_t chronoData() {
-  lcd.dispStr("chro", 0); // prompt choice
-  lcd.dispStr("race", 1);
+  TM8.dispStr("chro", 0); // prompt choice
+  TM8.dispStr("race", 1);
   uint8_t chronoCounter = 0;
   uint8_t raceCounter = 0;
-  while (digitalRead(btn1) && digitalRead(btn3)); // wait for either btn1 or btn3 input
-  if (!digitalRead(btn1)) { // if chrono records selected
+  while (readBtn1 && readBtn3); // wait for either btn1 or btn3 input
+  if (!readBtn1) { // if chrono records selected
     delay(BUTTON_DELAY);
     while(readBtn4) {
-      lcd.dispDec(chronoSplits[chronoCounter] / 1000, 0);
-      lcd.dispDec((chronoSplits[chronoCounter] % 1000) * 10 + chronoCounter, 1);
-      if (!digitalRead(btn1)) {
+      TM8.dispDec(chronoSplits[chronoCounter] / 1000, 0);
+      TM8.dispDec((chronoSplits[chronoCounter] % 1000) * 10 + chronoCounter, 1);
+      if (!readBtn1) {
         chronoCounter++;
         if (chronoCounter > 9) {
           chronoCounter = 0;
         }
         Serial.print(chronoSplits[chronoCounter]);
         delay(BUTTON_DELAY);
-      } else if (!digitalRead(btn2)) {
+      } else if (!readBtn2) {
         chronoCounter--;
         if (chronoCounter > 9) {
           chronoCounter = 9;
@@ -627,19 +619,19 @@ uint8_t chronoData() {
         delay(BUTTON_DELAY);
       }
     }
-  } else if (!digitalRead(btn3)) { // if race records selected
+  } else if (!readBtn3) { // if race records selected
     delay(BUTTON_DELAY);
     while(readBtn4) {
-      lcd.dispDec(raceSplits[raceCounter] / 100, 0);
-      lcd.dispDec((raceSplits[raceCounter] % 100) * 100 + raceCounter, 1);
-      if (!digitalRead(btn1)) {
+      TM8.dispDec(raceSplits[raceCounter] / 100, 0);
+      TM8.dispDec((raceSplits[raceCounter] % 100) * 100 + raceCounter, 1);
+      if (!readBtn1) {
         raceCounter++;
         if (raceCounter > 99) {
           raceCounter = 0;
         }
         Serial.print(raceSplits[raceCounter]);
         delay(BUTTON_DELAY);
-      } else if (!digitalRead(btn2)) {
+      } else if (!readBtn2) {
         raceCounter--;
         if (raceCounter > 99) {
           raceCounter = 99;
@@ -658,26 +650,26 @@ Watch flashes custom messages and LEDs
 */
 uint8_t party() {
   uint8_t cnt = 0;
-  while(digitalRead(btn3)) {
+  while(readBtn3) {
     if (cnt) {
       delay(BUTTON_DELAY);
-      lcd.dispStr("OVTA", 0);
-      lcd.dispStr("TIME", 1);
+      TM8.dispStr("OVTA", 0);
+      TM8.dispStr("TIME", 1);
     } else {
       delay(BUTTON_DELAY);
-      lcd.dispStr("it*s", 0);
-      lcd.dispStr(" lit", 1);
+      TM8.dispStr("it*s", 0);
+      TM8.dispStr(" lit", 1);
     }
     if (!readBtn4) {
-      lcd.dispStr("", 0);
-      lcd.dispStr("", 1);
+      TM8.dispStr("", 0);
+      TM8.dispStr("", 1);
       delay(5000);
       animTach();
     }
-    if (!digitalRead(btn2)) {
+    if (!readBtn2) {
       cnt = !cnt;
     }
-    if (!digitalRead(btn1)) {
+    if (!readBtn1) {
       delay(5000);
       for (int i=0; i<5; i++) {
         digitalWrite(leds[i], 1);
@@ -698,12 +690,12 @@ void matchNumbersGame() {
   while (hits < 3) {
   uint8_t target = rand() % 10;  /* generate a number from 0 - 9 */
   uint32_t startTime = millis();
-    while(digitalRead(btn3)) {
+    while(readBtn3) {
       if (numbers > 9) {numbers = 0;}
-      if (numbers == 0) {lcd.dispStr("0000", 0);}
-      else {lcd.dispDec(numbers * 1111, 0);}
-      if (target == 0) {lcd.dispStr("0000", 1);}
-      else {lcd.dispDec(target * 1111, 1);}
+      if (numbers == 0) {TM8.dispStr("0000", 0);}
+      else {TM8.dispDec(numbers * 1111, 0);}
+      if (target == 0) {TM8.dispStr("0000", 1);}
+      else {TM8.dispDec(target * 1111, 1);}
       if (millis() - startTime >= 200) {
         numbers++;
         startTime = millis();
@@ -711,25 +703,25 @@ void matchNumbersGame() {
     }
     if (numbers == target) {
       hits++;
-      lcd.dispStr("HIT ", 0);
-      lcd.dispDec(hits, 1);
+      TM8.dispStr("HIT ", 0);
+      TM8.dispDec(hits, 1);
       delay(1000);
       for (int i=0; i<5; i++) {
-        lcd.dispStr("HIT ", 0);
-        lcd.dispDec(hits, 1);
+        TM8.dispStr("HIT ", 0);
+        TM8.dispDec(hits, 1);
         delay(50);
-        lcd.dispStr("", 0);
-        lcd.dispStr("", 1);
+        TM8.dispStr("", 0);
+        TM8.dispStr("", 1);
         delay(50);
       }
     } else {
       for (int i=0; i<5; i++) {
-        lcd.dispStr("MISS", 0);
-        lcd.dispStr("MISS", 1);
+        TM8.dispStr("MISS", 0);
+        TM8.dispStr("MISS", 1);
         tone(9, 4000);
         delay(50);
-        lcd.dispStr("", 0);
-        lcd.dispStr("", 1);
+        TM8.dispStr("", 0);
+        TM8.dispStr("", 1);
         noTone(9);
         delay(50);
       }
@@ -754,76 +746,76 @@ void F1ReactionGame() {
     switch (corner) {
       case 0:
         for (int i=0; i<4; i++) {
-          lcd.dispCharRaw(i, 0x71, 0);
+          TM8.dispCharRaw(i, 0x71, 0);
         }
         break;
       case 1:
         for (int i=0; i<4; i++) {
-          lcd.dispCharRaw(i, 0x1E, 0);
+          TM8.dispCharRaw(i, 0x1E, 0);
         }
         break;
       case 2:
         for (int i=0; i<4; i++) {
-          lcd.dispCharRaw(i, 0x71, 1);
+          TM8.dispCharRaw(i, 0x71, 1);
         }
         break;
       case 3:
         for (int i=0; i<4; i++) {
-          lcd.dispCharRaw(i, 0x1E, 1);
+          TM8.dispCharRaw(i, 0x1E, 1);
         }
         break;
     }
     bool hit = 0;
     uint32_t startTime = millis();
     while(millis() - startTime <= 500) {
-      if (corner == 0 && !digitalRead(btn1)) {
+      if (corner == 0 && !readBtn1) {
         hits++;
         hit = 1;
-        lcd.dispStr("hit ", 0);
-        lcd.dispChar(3, hits, 0);
-        lcd.dispDec(millis() - startTime, 1);
+        TM8.dispStr("hit ", 0);
+        TM8.dispChar(3, hits, 0);
+        TM8.dispDec(millis() - startTime, 1);
         delay(1000);
-      } else if (corner == 1 && !digitalRead(btn2)) {
+      } else if (corner == 1 && !readBtn2) {
         hits++;
         hit = 1;
-        lcd.dispStr("hit ", 0);
-        lcd.dispChar(3, hits, 0);
-        lcd.dispDec(millis() - startTime, 1);
+        TM8.dispStr("hit ", 0);
+        TM8.dispChar(3, hits, 0);
+        TM8.dispDec(millis() - startTime, 1);
         delay(1000);
-      } else if (corner == 2 && !digitalRead(btn3)) {
+      } else if (corner == 2 && !readBtn3) {
         hits++;
         hit = 1;
-        lcd.dispStr("hit ", 0);
-        lcd.dispChar(3, hits, 0);
-        lcd.dispDec(millis() - startTime, 1);
+        TM8.dispStr("hit ", 0);
+        TM8.dispChar(3, hits, 0);
+        TM8.dispDec(millis() - startTime, 1);
         delay(1000);
       } else if (corner == 3 && !readBtn4) {
         hits++;
         hit = 1;
-        lcd.dispStr("hit ", 0);
-        lcd.dispChar(3, hits, 0);
-        lcd.dispDec(millis() - startTime, 1);
+        TM8.dispStr("hit ", 0);
+        TM8.dispChar(3, hits, 0);
+        TM8.dispDec(millis() - startTime, 1);
         delay(1000);
       }
     }
     if (!hit) {
-      lcd.dispStr("TIME", 0);
-      lcd.dispStr(" OUT", 1);
+      TM8.dispStr("TIME", 0);
+      TM8.dispStr(" OUT", 1);
       delay(1000);
     }
     hit = 0;
-    lcd.Command(CDM4101_CLEAR, 0);
-    lcd.Command(CDM4101_CLEAR, 1);
+    TM8.Command(LCD_CLEAR, 0);
+    TM8.Command(LCD_CLEAR, 1);
   }
 }
 
 void game() {
   uint8_t gameNo = 1;
-  while(digitalRead(btn3)) {
-    lcd.dispStr("GAME", 0);
-    lcd.dispDec(gameNo, 1);
-    if (!digitalRead(btn1)) {gameNo++;delay(BUTTON_DELAY);}
-    if (!digitalRead(btn2)) {gameNo--;delay(BUTTON_DELAY);}
+  while(readBtn3) {
+    TM8.dispStr("GAME", 0);
+    TM8.dispDec(gameNo, 1);
+    if (!readBtn1) {gameNo++;delay(BUTTON_DELAY);}
+    if (!readBtn2) {gameNo--;delay(BUTTON_DELAY);}
     if (gameNo < 1) {gameNo = 3;}
     if (gameNo > 3) {gameNo = 1;}
   }
@@ -847,15 +839,15 @@ void game() {
 
 void flashLight() {
   bool flash = 0;
-  lcd.dispStr("", 0);
-  lcd.dispStr("", 1);
-  while(digitalRead(btn1)) {
+  TM8.dispStr("", 0);
+  TM8.dispStr("", 1);
+  while(readBtn1) {
     if (!readBtn4) {
       flash = !flash;
       delay(BUTTON_DELAY);
     }
-    if (!digitalRead(btn3)) {
-      digitalWrite(6, !digitalRead(btn3));
+    if (!readBtn3) {
+      digitalWrite(6, !readBtn3);
     }
     // digitalWrite(6, flash);
     for (int i=0; i<5; i++) {
@@ -873,8 +865,8 @@ void showBMEData(uint16_t dispDelay) {
 		bme.getData(BMEData);
     int temp = (int)BMEData.temperature;
     int hum = (int)BMEData.humidity;
-		lcd.dispDec(temp, 0);
-    lcd.dispDec(hum, 1);
+		TM8.dispDec(temp, 0);
+    TM8.dispDec(hum, 1);
 	}
 
   delay(dispDelay);
@@ -885,21 +877,21 @@ void showAccelData(uint16_t dispDelay) {
   int yAxis = round(accel.readFloatAccelY() * 10);
   int zAxis = round(accel.readFloatAccelZ() * 10);
 
-  lcd.dispDec(xAxis, 0);
-  lcd.dispDec(yAxis, 1);
+  TM8.dispDec(xAxis, 0);
+  TM8.dispDec(yAxis, 1);
 
   delay(dispDelay);
 }
 
 void showTelemetry() {
   while (readBtn4) {
-    lcd.dispStr("temp", 0);
-    lcd.dispStr("accl", 1);
-    if (!digitalRead(btn1)) {
+    TM8.dispStr("temp", 0);
+    TM8.dispStr("accl", 1);
+    if (!readBtn1) {
       while (readBtn4) {
         showBMEData(1000);
       }
-    } else if (!digitalRead(btn3)) {
+    } else if (!readBtn3) {
       while (readBtn4) {
         showAccelData(100);
       }
@@ -910,8 +902,8 @@ void showTelemetry() {
 uint8_t configure() {
   detachInterrupt(btn3);
   while(readBtn4) {
-    dispMode ? lcd.dispStr("aod ", 0) : lcd.dispStr("wake", 0);
-    if (!digitalRead(btn3)) {
+    dispMode ? TM8.dispStr("aod ", 0) : TM8.dispStr("wake", 0);
+    if (!readBtn3) {
       dispMode = !dispMode;
       delay(BUTTON_DELAY);
     }
@@ -933,29 +925,29 @@ uint8_t mainMenu() {
   detachInterrupt(btn3); // detach interrupts for button use during function
   detachInterrupt(btn1);
   while (millis() - startTime <= INACTIVITY_TIMEOUT) { // while under timeout threshold
-    lcd.dispDec(mainProgramNumber, 0); // display program number on the left, but it starts from 1, not 0
-    lcd.dispStr(mainPrograms[mainProgramNumber], 1); // display program name on the right
-    if (!digitalRead(btn1)) { // if button 1 is pressed
+    TM8.dispDec(mainProgramNumber, 0); // display program number on the left, but it starts from 1, not 0
+    TM8.dispStr(mainPrograms[mainProgramNumber], 1); // display program name on the right
+    if (!readBtn1) { // if button 1 is pressed
       mainProgramNumber++; // increment main program counter and select next program
       if (mainProgramNumber >= numPrograms) { // roll back to program 0 after going through entire list
         mainProgramNumber = 1;
       }
       delay(BUTTON_DELAY); // short delay to prevent crazy fast scrolling
       startTime = millis(); // reset timer to 0 to extend time
-    } else if (!digitalRead(btn2)) { // if button 2 is pressed
+    } else if (!readBtn2) { // if button 2 is pressed
       mainProgramNumber--; // increment main program counter and select next program
       if (mainProgramNumber >= numPrograms) { // roll back to program 0 after going through entire list
         mainProgramNumber = numPrograms - 1;
       }
       delay(BUTTON_DELAY); // short delay to prevent crazy fast scrolling
       startTime = millis(); // reset timer to 0 to extend time
-    } else if (!digitalRead(btn3)) { // if button 3 is pressed
+    } else if (!readBtn3) { // if button 3 is pressed
       for (int i=0; i<3; i++) { // blink selected program 3 times on the display
-        lcd.dispStr("", 0);
-        lcd.dispStr("", 1);
+        TM8.dispStr("", 0);
+        TM8.dispStr("", 1);
         delay(50);
-        lcd.dispDec(mainProgramNumber, 0);
-        lcd.dispStr(mainPrograms[mainProgramNumber], 1);
+        TM8.dispDec(mainProgramNumber, 0);
+        TM8.dispStr(mainPrograms[mainProgramNumber], 1);
         delay(50);
       }
       delay(500); // half-second delay
@@ -1001,7 +993,7 @@ void runMainProgram(uint8_t prog) {
     game();
     break;
   default:
-    lcd.dispStr("Fuck", 0);
+    TM8.dispStr("Fuck", 0);
     delay(1000);
     break;
   }
@@ -1019,11 +1011,11 @@ uint8_t starter() {
   if (battLvl > 99) battLvl = 99;
   if (battLvl <= 10 && battLvl >= 0) {
     for (int i=0; i<3; i++) {
-      lcd.dispStr(" NO ", 0);
-      lcd.dispStr("FUEL", 1);
+      TM8.dispStr(" NO ", 0);
+      TM8.dispStr("FUEL", 1);
       delay(300);
-      lcd.dispStr("", 0);
-      lcd.dispStr("", 1);
+      TM8.dispStr("", 0);
+      TM8.dispStr("", 1);
       delay(300);
     }
   }
@@ -1031,58 +1023,59 @@ uint8_t starter() {
   uint8_t firingAnimCount = 0;
   int firingDelay = 50;
   while(1) {
-    if (!digitalRead(btn3) && !digitalRead(btn1)) {
-      while(!digitalRead(btn3) && !digitalRead(btn1)) {
+    if (!readBtn3 && !readBtn1) {
+      firingAnimCount = 0;
+      while(!readBtn3 && !readBtn1) {
         cnt++;
         tone(9, cnt * 20 + 500);
         uint8_t graph = cnt / 40;
         switch (graph) {
           case 0:
-            lcd.dispStr("", 0);
-            lcd.dispStr("", 1);
+            TM8.dispStr("", 0);
+            TM8.dispStr("", 1);
             break;
           case 1:
-            lcd.dispStr("8", 0);
-            lcd.dispStr("", 1);
+            TM8.dispStr("8", 0);
+            TM8.dispStr("", 1);
             break;
           case 2:
-            lcd.dispStr("88", 0);
-            lcd.dispStr("", 1);
+            TM8.dispStr("88", 0);
+            TM8.dispStr("", 1);
             break;
           case 3:
-            lcd.dispStr("888", 0);
-            lcd.dispStr("", 1);
+            TM8.dispStr("888", 0);
+            TM8.dispStr("", 1);
             break;
           case 4:
-            lcd.dispStr("8888", 0);
-            lcd.dispStr("", 1);
+            TM8.dispStr("8888", 0);
+            TM8.dispStr("", 1);
             break;
           case 5:
-            lcd.dispStr("8888", 0);
-            lcd.dispStr("8", 1);
+            TM8.dispStr("8888", 0);
+            TM8.dispStr("8", 1);
             break;
           case 6:
-            lcd.dispStr("8888", 0);
-            lcd.dispStr("88", 1);
+            TM8.dispStr("8888", 0);
+            TM8.dispStr("88", 1);
             break;
           case 7:
-            lcd.dispStr("8888", 0);
-            lcd.dispStr("888", 1);
+            TM8.dispStr("8888", 0);
+            TM8.dispStr("888", 1);
             break;
           case 8:
-            lcd.dispStr("8888", 0);
-            lcd.dispStr("8888", 1);
+            TM8.dispStr("8888", 0);
+            TM8.dispStr("8888", 1);
             break;
         }
         if (cnt == 320) {
           delay(50);
           for (int i=0; i<5; i++) {
-            lcd.dispStr("8888", 0);
-            lcd.dispStr("8888", 1);
+            TM8.dispStr("PROJ", 0);
+            TM8.dispStr("ECT4", 1);
             tone(9, 4000);
             delay(60);
-            lcd.dispStr("", 0);
-            lcd.dispStr("", 1);
+            TM8.dispStr("", 0);
+            TM8.dispStr("", 1);
             noTone(9);
             delay(60);
           }
@@ -1090,86 +1083,86 @@ uint8_t starter() {
           return 0;
         }
       }
-    } else if (digitalRead(btn3) || digitalRead(btn1) && cnt < 0) {
+    } else if (readBtn3 || readBtn1) {
       while(cnt > 0) {
         cnt--;
         tone(9, cnt * 20 + 500);
         uint8_t graph = cnt / 50;
         switch (graph) {
           case 0:
-            lcd.dispStr("", 0);
-            lcd.dispStr("", 1);
+            TM8.dispStr("", 0);
+            TM8.dispStr("", 1);
             break;
           case 1:
-            lcd.dispStr("8", 0);
-            lcd.dispStr("", 1);
+            TM8.dispStr("8", 0);
+            TM8.dispStr("", 1);
             break;
           case 2:
-            lcd.dispStr("88", 0);
-            lcd.dispStr("", 1);
+            TM8.dispStr("88", 0);
+            TM8.dispStr("", 1);
             break;
           case 3:
-            lcd.dispStr("888", 0);
-            lcd.dispStr("", 1);
+            TM8.dispStr("888", 0);
+            TM8.dispStr("", 1);
             break;
           case 4:
-            lcd.dispStr("8888", 0);
-            lcd.dispStr("", 1);
+            TM8.dispStr("8888", 0);
+            TM8.dispStr("", 1);
             break;
           case 5:
-            lcd.dispStr("8888", 0);
-            lcd.dispStr("8", 1);
+            TM8.dispStr("8888", 0);
+            TM8.dispStr("8", 1);
             break;
           case 6:
-            lcd.dispStr("8888", 0);
-            lcd.dispStr("88", 1);
+            TM8.dispStr("8888", 0);
+            TM8.dispStr("88", 1);
             break;
           case 7:
-            lcd.dispStr("8888", 0);
-            lcd.dispStr("888", 1);
+            TM8.dispStr("8888", 0);
+            TM8.dispStr("888", 1);
             break;
           case 8:
-            lcd.dispStr("8888", 0);
-            lcd.dispStr("8888", 1);
+            TM8.dispStr("8888", 0);
+            TM8.dispStr("8888", 1);
             break;
         }
-        if (cnt <= 10) {
+        if (cnt <= 0) {
           noTone(9);
         }
       }
     }
-    if (digitalRead(btn3) && cnt == 0) {
+    if (readBtn3 && cnt == 0) {
       firingAnimCount++;
       for (int i=0; i<8; i++) {
         uint8_t index = firingOrder[i] - 1;
         if (index >= 4) {
-          lcd.dispChar(index - 4, '-', 1);
+          TM8.dispChar(index - 4, '-', 1);
           delay(firingDelay);
-          lcd.dispCharRaw(index - 4, 0x3B, 1);
+          TM8.dispCharRaw(index - 4, 0x3B, 1);
           delay(firingDelay);
-          lcd.dispChar(index - 4, '0', 1);
+          TM8.dispChar(index - 4, '0', 1);
           delay(firingDelay);
-          lcd.dispCharRaw(index - 4, 0x44, 1);
+          TM8.dispCharRaw(index - 4, 0x44, 1);
           delay(firingDelay);
-          lcd.Command(CDM4101_CLEAR, 1);
+          TM8.Command(LCD_CLEAR, 1);
           delay(firingDelay);
         } else {
-          lcd.dispChar(index, '-', 0);
+          TM8.dispChar(index, '-', 0);
           delay(firingDelay);
-          lcd.dispCharRaw(index, 0x3B, 0);
+          TM8.dispCharRaw(index, 0x3B, 0);
           delay(firingDelay);
-          lcd.dispChar(index, '0', 0);
+          TM8.dispChar(index, '0', 0);
           delay(firingDelay);
-          lcd.dispCharRaw(index, 0x44, 0);
+          TM8.dispCharRaw(index, 0x44, 0);
           delay(firingDelay);
-          lcd.Command(CDM4101_CLEAR, 0);
+          TM8.Command(LCD_CLEAR, 0);
           delay(firingDelay);
         }
       }
     }
     if (firingAnimCount >= 3) {
-      lcd.dispStr("OVTA", 0);
-      lcd.dispStr("TIME", 1);
+      TM8.dispStr("OVTA", 0);
+      TM8.dispStr("TIME", 1);
       firingAnimCount = 0;
       LowPower.deepSleep();
     }
@@ -1198,12 +1191,12 @@ void wakeToCheck() {
     // if menuInt() ISR is called, show time, and if pressed again(double click), enter menu.
     // goes back to sleep after 2 seconds
     if (menuActive) {
-      while(!digitalRead(btn3));
+      while(!readBtn3);
       for (int i=0; i<8; i++) {
         uint32_t startTime = millis();
-        lcd.dispDec(random() % 9000 + 1000, 0);
-        lcd.dispDec(random() % 9000 + 1000, 1);
-        if (!digitalRead(btn3) && millis() - startTime <= 200) {
+        TM8.dispDec(random() % 9000 + 1000, 0);
+        TM8.dispDec(random() % 9000 + 1000, 1);
+        if (!readBtn3 && millis() - startTime <= 200) {
           runMainProgram(mainMenu());
           attachInterrupt(btn3, menuInt, FALLING); // reattach interrupt to resume normal button function in main()
           attachInterrupt(btn1, showDateInt, FALLING);
@@ -1219,21 +1212,21 @@ void wakeToCheck() {
           if (battLvl > 99) battLvl = 99;
 
           // LCD displays hours and minutes on the left, seconds on the right
-          lcd.dispDec(rtc.getHours() * 100 + rtc.getMinutes(), 0);
-          lcd.dispDec(rtc.getSeconds() * 100 + battLvl, 1);
+          TM8.dispDec(rtc.getHours() * 100 + rtc.getMinutes(), 0);
+          TM8.dispDec(rtc.getSeconds() * 100 + battLvl, 1);
         }
       }
       menuActive = false;
     } else if (showDateActive) {
       scrambleAnim(8, 30);
-      lcd.dispDec(rtc.getMonth() * 100 + rtc.getDay(), 0);
-      lcd.dispStr(daysOfTheWeek[getDayOfWeek(rtc.getYear() + 2000, rtc.getMonth(), rtc.getDay())], 1);
+      TM8.dispDec(rtc.getMonth() * 100 + rtc.getDay(), 0);
+      TM8.dispStr(daysOfTheWeek[getDayOfWeek(rtc.getYear() + 2000, rtc.getMonth(), rtc.getDay())], 1);
       delay(1000);
       showDateActive = false;
     }
     scrambleAnim(8, 30);
-    lcd.dispStr("ovta", 0);
-    lcd.dispStr("time", 1);
+    TM8.dispStr("ovta", 0);
+    TM8.dispStr("time", 1);
     USBDevice.detach();
     LowPower.deepSleep();
   }
@@ -1254,9 +1247,9 @@ void alwaysOnDisplay() {
       scrambleAnim(8, 30);
       uint32_t startTime = millis();
       while (millis() - startTime <= 1000) {
-        lcd.dispDec(rtc.getMonth() * 100 + rtc.getDay(), 0);
-        lcd.dispStr(daysOfTheWeek[getDayOfWeek(rtc.getYear() + 2000, rtc.getMonth(), rtc.getDay())], 1);
-        if (!digitalRead(btn1) && millis() - startTime <= 200) {
+        TM8.dispDec(rtc.getMonth() * 100 + rtc.getDay(), 0);
+        TM8.dispStr(daysOfTheWeek[getDayOfWeek(rtc.getYear() + 2000, rtc.getMonth(), rtc.getDay())], 1);
+        if (!readBtn1 && millis() - startTime <= 200) {
           setDate();
           attachInterrupt(btn1, showDateInt, FALLING);
           menuActive = false; // reset menuActive to false
@@ -1275,8 +1268,8 @@ void alwaysOnDisplay() {
     if (battLvl > 99) battLvl = 99;
 
     // LCD displays hours and minutes on the left, seconds on the right
-    lcd.dispDec(rtc.getHours() * 100 + rtc.getMinutes(), 0);
-    lcd.dispDec(rtc.getSeconds() * 100 + battLvl, 1);
+    TM8.dispDec(rtc.getHours() * 100 + rtc.getMinutes(), 0);
+    TM8.dispDec(rtc.getSeconds() * 100 + battLvl, 1);
     USBDevice.detach();
     LowPower.deepSleep(996);
   }
@@ -1291,7 +1284,6 @@ Finally, starts starter() and after that, runs second I2C echo check
 Hold btn4 during boot to skip starter() and second I2C check, to save battery
 */
 void setup() {
-
   rtc.begin(); // fire up RTC
 
   // set RTC time
@@ -1301,7 +1293,7 @@ void setup() {
   rtc.setDate(day, month, year);
 
   // initialize LCDs
-  lcd.init_lcd();
+  TM8.init_lcd();
 
   // start both I2C buses
   Wire.begin();
@@ -1310,14 +1302,14 @@ void setup() {
   // pinPeripheral(4, PIO_SERCOM); // SDA: D4 / PA08
   // pinPeripheral(3, PIO_SERCOM); // SCL: D3 / PA09
 
-  lcd.dispStr("0nrg", 0);
+  TM8.dispStr("0nrg", 0);
 
-  lcd.dispStr("I2C", 0); // confirm I2C initialization
+  TM8.dispStr("I2C", 0); // confirm I2C initialization
   delay(50);
 
   // start MAX17048 fuel gauge
   if (!fuel.begin()) {
-    lcd.dispStr(" FF ", 0); // Fuel Fail error on LCD
+    TM8.dispStr(" FF ", 0); // Fuel Fail error on LCD
     for (int i=0; i<3; i++) {
       tone(9, 4000);
       delay(100);
@@ -1326,13 +1318,13 @@ void setup() {
     }
     delay(2000);
   }
-  lcd.dispStr("FUEL", 0); // confirms fuel sensor init
+  TM8.dispStr("FUEL", 0); // confirms fuel sensor init
   delay(50);
 
   // start LIS3DH accelerometer
   if (accel.begin() != IMU_SUCCESS) {
-    lcd.dispStr("ACCL", 0); // fail message on LCD
-    lcd.dispStr("FAIL", 1);
+    TM8.dispStr("ACCL", 0); // fail message on LCD
+    TM8.dispStr("FAIL", 1);
     for (int i=0; i<3; i++) {
       tone(9, 4000);
       delay(100);
@@ -1341,8 +1333,8 @@ void setup() {
     }
     delay(2000);
   }
-  lcd.dispStr("ACCL", 0); // confirms accelerometer init
-  lcd.dispStr("INIT", 1);
+  TM8.dispStr("ACCL", 0); // confirms accelerometer init
+  TM8.dispStr("INIT", 1);
   delay(50);
 
   // rom.begin(0x50, wire1);
@@ -1355,8 +1347,8 @@ void setup() {
 	bme.setHeaterProf(300, 100);
 
   if (bme.checkStatus() != BME68X_OK) {
-    lcd.dispStr("BME ", 0); // fail message on LCD
-    lcd.dispStr("FAIl", 1);
+    TM8.dispStr("BME ", 0); // fail message on LCD
+    TM8.dispStr("FAIl", 1);
     for (int i=0; i<3; i++) {
       tone(9, 4000);
       delay(100);
@@ -1365,8 +1357,8 @@ void setup() {
     }
     delay(2000);
   }
-  lcd.dispStr("BME ", 0); // confirms BME init
-  lcd.dispStr("INIT", 1);
+  TM8.dispStr("BME ", 0); // confirms BME init
+  TM8.dispStr("INIT", 1);
   delay(50);
 
   // enable pullups on all inputs to prevent floating
@@ -1386,8 +1378,8 @@ void setup() {
   PORT->Group[0].PINCFG[12].reg = PORT_PINCFG_PULLEN | PORT_PINCFG_INEN;
   PORT->Group[0].OUTSET.reg = PORT_PA12;
 
-  // lcd.dispStr("IO D", 0);
-  // lcd.dispStr(" set", 1);
+  // TM8.dispStr("IO D", 0);
+  // TM8.dispStr(" set", 1);
 
   // set button 3 (top right) to open main menu
   // set to FALLING because RISING would often trigger the interrupt but not actually run the ISR,
@@ -1419,8 +1411,8 @@ void setup() {
   AC->CTRLA.bit.ENABLE=0;
 
   // confirm IO direction init
-  lcd.dispStr("IO d", 0);
-  lcd.dispStr(" set", 1);
+  TM8.dispStr("IO d", 0);
+  TM8.dispStr(" set", 1);
   delay(50);
 
   //if BTN4 isn't pressed, run starter() and second system init

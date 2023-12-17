@@ -17,6 +17,8 @@
 
 //----------------------------------------------------------------------------
 
+#define TM8_NUM_LEDS 5
+
 class TM8_util
 {
 public:
@@ -28,8 +30,13 @@ public:
 	void dispStrTimed(char *s, bool disp);
 	void dispDec(short n, bool disp);
   void blinkGo(bool isGo);
+  void animSwipeDown(uint8_t animDelay);
+  void animTach(void);
+  void scrambleAnim(uint8_t cnt, uint8_t animDelay);
+  void sysCheck();
 
-  uint8_t Digits[LCD_NUM_DIGITS];
+  uint8_t digits[LCD_NUM_DIGITS];
+  uint8_t leds[TM8_NUM_LEDS];
   //uint8_t Segs[LCD_NUM_SEGS];
 
 	void Update(bool);

@@ -116,11 +116,11 @@ void TM8_util::Update(bool disp) // if disp is 0, left LCD. if 1, right LCD.
     else      Wire.write(CMD_NOBLINK);
 
   #if 1
-    data[0] = (Digits[0] >> 4); // || LCD_BAR
-    data[1] = (Digits[0] << 4) | (Digits[1] >> 3);
-    data[2] = (Digits[1] << 5) | (Digits[2] >> 2);
-    data[3] = (Digits[2] << 6) | (Digits[3] >> 1);
-    data[4] = (Digits[3] << 7);
+    data[0] = (digits[0] >> 4); // || LCD_BAR
+    data[1] = (digits[0] << 4) | (digits[1] >> 3);
+    data[2] = (digits[1] << 5) | (digits[2] >> 2);
+    data[3] = (digits[2] << 6) | (digits[3] >> 1);
+    data[4] = (digits[3] << 7);
   #else
     Wire.write(0x70);
     Wire.write(0x3B);
@@ -144,11 +144,11 @@ void TM8_util::Update(bool disp) // if disp is 0, left LCD. if 1, right LCD.
     else      wireTwo.write(CMD_NOBLINK);
 
   #if 1
-    data[0] = (Digits[0] >> 4); // || LCD_BAR
-    data[1] = (Digits[0] << 4) | (Digits[1] >> 3);
-    data[2] = (Digits[1] << 5) | (Digits[2] >> 2);
-    data[3] = (Digits[2] << 6) | (Digits[3] >> 1);
-    data[4] = (Digits[3] << 7);
+    data[0] = (digits[0] >> 4); // || LCD_BAR
+    data[1] = (digits[0] << 4) | (digits[1] >> 3);
+    data[2] = (digits[1] << 5) | (digits[2] >> 2);
+    data[3] = (digits[2] << 6) | (digits[3] >> 1);
+    data[4] = (digits[3] << 7);
   #else
     wireTwo.write(0x70);
     wireTwo.write(0x3B);
@@ -167,10 +167,10 @@ void TM8_util::init_lcd(void)
 {
 	Blink = 0;
 
-	Digits[0] = Segs[SPACE];
-	Digits[1] = Segs[SPACE];
-	Digits[2] = Segs[SPACE];
-	Digits[3] = Segs[SPACE];
+	digits[0] = Segs[SPACE];
+	digits[1] = Segs[SPACE];
+	digits[2] = Segs[SPACE];
+	digits[3] = Segs[SPACE];
 
 	Wire.beginTransmission(I2C_ADDR);
 	Wire.write(CMD_MODE_SET);
@@ -218,10 +218,10 @@ void TM8_util::Command(uint8_t cmd, bool disp)
 			break;
 
 		case LCD_CLEAR :
-			Digits[0] = Segs[SPACE];
-			Digits[1] = Segs[SPACE];
-			Digits[2] = Segs[SPACE];
-			Digits[3] = Segs[SPACE];
+			digits[0] = Segs[SPACE];
+			digits[1] = Segs[SPACE];
+			digits[2] = Segs[SPACE];
+			digits[3] = Segs[SPACE];
 
 			Update(disp);
 			break;
@@ -250,13 +250,13 @@ char TM8_util::ConvertChar(char c)
 
 void TM8_util::dispChar(uint8_t index, char c, bool disp)
 {
-	Digits[(int)index] = Segs[(int)(ConvertChar(c))];
+	digits[(int)index] = Segs[(int)(ConvertChar(c))];
 	Update(disp);
 }
 
 void TM8_util::dispCharRaw(uint8_t index, char c, bool disp)
 {
-	Digits[(int)index] = c;
+	digits[(int)index] = c;
 	Update(disp);
 }
 
@@ -264,7 +264,7 @@ void TM8_util::dispStr(const char *s, bool disp)
 {
 	uint8_t i,c;
 
-	for(i=0;i<LCD_NUM_DIGITS;i++) Digits[i] = Segs[SPACE];
+	for(i=0;i<LCD_NUM_DIGITS;i++) digits[i] = Segs[SPACE];
 
 	i = 0;
 
@@ -272,7 +272,7 @@ void TM8_util::dispStr(const char *s, bool disp)
 	{
 		c = Segs[(int)(ConvertChar(s[i]))];
 
-		Digits[i] = c;
+		digits[i] = c;
 		i++;
 	}
 
@@ -323,4 +323,129 @@ void TM8_util::blinkGo(bool isGo) {
   isGo ? dispStr(" GO ", 1) : dispStr("Err ", 1);
   noTone(9);
   delay(500);
+}
+
+/*
+Animation frames
+*/
+uint8_t tachInit[7] = {0x00, 0x04, 0x0C, 0x2C, 0x6C, 0x6D, 0x6F};
+uint8_t swipeDown[10] = {0x40, 0x61, 0x71, 0x7B, 0x7F, 0x3F, 0x1E, 0x0E, 0x04, 0x00};
+
+// "swipe down" animatin
+void TM8_util::animSwipeDown(uint8_t animDelay) {
+  for (int i=0; i<10; i++) {
+    for (int d=0; d<4; d++) {
+      digits[d] = swipeDown[i];
+    }
+    Update(0);
+    Update(1);
+    delay(animDelay);
+  }
+}
+
+void TM8_util::scrambleAnim(uint8_t cnt, uint8_t animDelay) {
+  for (int i=0; i<cnt; i++) {
+    dispDec(random() % 9000 + 1000, 0);
+    dispDec(random() % 9000 + 1000, 1);
+    delay(animDelay);
+  }
+}
+
+static uint8_t leds[TM8_NUM_LEDS] = {7, A3, A1, 8, 5};
+
+// animation mimicking tachometer start-up on vintage cars
+void TM8_util::animTach() {
+  srand(analogRead(A0)); // set random seed to analog noise on A0
+  uint8_t buffer; // buffer variable used for swapping leds[] elements
+  for (int i=4; i>=0; i--) { // decrease RNG range for no overlap
+    int ledToLight = random(0, i+1); // choose random LED to light
+    buffer = leds[ledToLight]; // swap randomly selected LED with last array value.
+    leds[ledToLight] = leds[i]; // randomly selected LED goes last in the array
+    leds[i] = buffer; // last array element goes to where randomly selected LED was
+    digitalWrite(leds[i], 1); // light up randomly selected LED
+    delay(100);
+  }
+  for (int i=0; i<7; i++) { // for each frame of tachInit[] animation
+    for (int d=0; d<4; d++) { // display on all digits
+      digits[d] = tachInit[i]; 
+    }
+    Update(0); // update both LCDs
+    Update(1);
+    delay(80);
+  }
+  delay(250);
+  for (int i=6; i>=0; i--) { // like above, but opposite
+    for (int d=0; d<4; d++) {
+      digits[d] = tachInit[i];
+    }
+    Update(0);
+    Update(1);
+    delay(80);
+  }
+  for (int i=4; i>=0; i--) { // Turns off all LEDs in a totally new random order.
+    int ledToLight = random(0, i+1);
+    buffer= leds[ledToLight];
+    leds[ledToLight] = leds[i];
+    leds[i] = buffer;
+    digitalWrite(leds[i], 0);
+    delay(100);
+  }
+}
+
+/*
+bootup animation. Scans all I2C buses and devices. Checks for response
+*/
+void TM8_util::sysCheck() {
+  animTach(); // vintage tachometer animation
+  uint8_t deviceCount = 0; // total number of devices detected. Increments with each device detected. Should be 5.
+
+  dispStr("LCDR", 0);
+  wireTwo.beginTransmission(LCD_ADDRESS);
+  blinkGo(!Wire.endTransmission()); deviceCount++;
+
+  dispStr("LCDL", 0);
+  Wire.beginTransmission(LCD_ADDRESS);
+  blinkGo(!wireTwo.endTransmission()); deviceCount++;
+
+  dispStr("FUEL", 0);
+  Wire.beginTransmission(FUEL_ADDRESS);
+  blinkGo(!Wire.endTransmission()); deviceCount++;
+
+  dispStr("ACCL", 0);
+  wireTwo.beginTransmission(ACCEL_ADDRESS);
+  blinkGo(!wireTwo.endTransmission()); deviceCount++;
+
+  dispStr("TEMP", 0);
+  wireTwo.beginTransmission(BME_ADDRESS);
+  blinkGo(!wireTwo.endTransmission()); deviceCount++;
+
+  delay(750);
+  if (deviceCount == 5) { // if all devices detected
+    dispStr("", 1);
+    dispStr("All ", 0);
+    tone(9, 2000, 100);
+    delay(500);
+    dispStr("Syst", 0);
+    dispStr("ems", 1);
+    tone(9, 2000, 100);
+    delay(500);
+    dispStr("", 1);
+    for (int i=0; i<7; i++) {
+      dispStr(" GO ", 0);
+      tone(9, 4000);
+      delay(75);
+      dispStr("", 0);
+      noTone(9);
+      delay(75);
+    }
+  } else { // if a different number of devices detected
+    for (int i=0; i<5; i++) {
+      dispStr(" Err", 0);
+      dispStr("or  ", 1);
+      delay(500);
+      dispStr("dcnt", 0);
+      dispDec(deviceCount, 1); // show number of devices detected
+      delay(500);
+    }
+  }
 }

@@ -43,14 +43,6 @@ bme68xData BMEData;
 ExternalEEPROM rom;
 TM8_util TM8;
 
-const uint8_t btn1 = 2; // top left button
-const uint8_t btn2 = 38; // bottom left button
-const uint8_t btn3 = 24; // top right button
-
-const uint8_t led5 = 5; // LED5, middle auxilliary LED
-
-uint8_t leds[] = {7, A3, A1, 8, 5};
-
 // I found after lots of trial and error this is the only way to get TM8 to read PA12
 // without the whole thing freezing or acting up
 // returns 0 when closed, 1 when open
@@ -58,6 +50,11 @@ uint8_t leds[] = {7, A3, A1, 8, 5};
 #define readBtn2 (PORT->Group[0].IN.reg & (1 << 13))
 #define readBtn3 (PORT->Group[1].IN.reg & (1 << 11))
 #define readBtn4 (PORT->Group[0].IN.reg & (1 << 12))
+
+const uint8_t btn1 = 2; // top left button
+const uint8_t btn2 = 38; // bottom left button
+const uint8_t btn3 = 24; // top right button
+const uint8_t led5 = 5; // LED5, middle auxilliary LED
 
 bool menuActive = false; // main Menu ISR handler variable,
 // becomes true when main menu is opened and false when menu's over
@@ -107,133 +104,6 @@ void actionInt() {
 // ISR for recording splits in chronograph
 void recordSplitInt() {
   splitActive = true;
-}
-
-// hex array for tachometer animation frames
-uint8_t tachInit[7] = {0x00, 0x04, 0x0C, 0x2C, 0x6C, 0x6D, 0x6F};
-uint8_t swipeDown[10] = {0x40, 0x61, 0x71, 0x7B, 0x7F, 0x3F, 0x1E, 0x0E, 0x04, 0x00};
-
-// "swipe down" animatin
-void animSwipeDown(uint8_t animDelay) {
-  for (int i=0; i<10; i++) {
-    for (int d=0; d<4; d++) {
-      TM8.Digits[d] = swipeDown[i];
-    }
-    TM8.Update(0);
-    TM8.Update(1);
-    delay(animDelay);
-  }
-}
-
-void scrambleAnim(uint8_t cnt, uint8_t animDelay) {
-  for (int i=0; i<cnt; i++) {
-    TM8.dispDec(random() % 9000 + 1000, 0);
-    TM8.dispDec(random() % 9000 + 1000, 1);
-    delay(animDelay);
-  }
-}
-
-// animation mimicking tachometer start-up on vintage cars
-void animTach() {
-  srand(analogRead(A0)); // set random seed to analog noise on A0
-  uint8_t buffer; // buffer variable used for swapping leds[] elements
-  for (int i=4; i>=0; i--) { // decrease RNG range for no overlap
-    int ledToLight = random(0, i+1); // choose random LED to light
-    buffer= leds[ledToLight]; // swap randomly selected LED with last array value.
-    leds[ledToLight] = leds[i]; // randomly selected LED goes last in the array
-    leds[i] = buffer; // last array element goes to where randomly selected LED was
-    digitalWrite(leds[i], 1); // light up randomly selected LED
-    delay(100);
-  }
-  for (int i=0; i<7; i++) { // for each frame of tachInit[] animation
-    for (int d=0; d<4; d++) { // display on all digits
-      TM8.Digits[d] = tachInit[i]; 
-    }
-    TM8.Update(0); // update both LCDs
-    TM8.Update(1);
-    delay(80);
-  }
-  delay(250);
-  for (int i=6; i>=0; i--) { // like above, but opposite
-    for (int d=0; d<4; d++) {
-      TM8.Digits[d] = tachInit[i];
-    }
-    TM8.Update(0);
-    TM8.Update(1);
-    delay(80);
-  }
-  for (int i=4; i>=0; i--) { // Turns off all LEDs in a totally new random order.
-    int ledToLight = random(0, i+1);
-    buffer= leds[ledToLight];
-    leds[ledToLight] = leds[i];
-    leds[i] = buffer;
-    digitalWrite(leds[i], 0);
-    delay(100);
-  }
-}
-
-void blinkMsg(const char * msg, uint8_t blinkDelay, bool sound, uint8_t reps) {
-  for (int i=0; i<reps; i++) {
-    TM8.dispStr("    ", 1);
-  }
-}
-
-/*
-bootup animation. Scans all I2C buses and devices. Checks for response
-*/
-void sysCheck() {
-  animTach(); // vintage tachometer animation
-  uint8_t deviceCount = 0; // total number of devices detected. Increments with each device detected. Should be 5.
-
-  TM8.dispStr("LCDR", 0);
-  wire1.beginTransmission(LCD_ADDRESS);
-  TM8.blinkGo(!Wire.endTransmission()); deviceCount++;
-
-  TM8.dispStr("LCDL", 0);
-  Wire.beginTransmission(LCD_ADDRESS);
-  TM8.blinkGo(!wire1.endTransmission()); deviceCount++;
-
-  TM8.dispStr("FUEL", 0);
-  Wire.beginTransmission(FUEL_ADDRESS);
-  TM8.blinkGo(!Wire.endTransmission()); deviceCount++;
-
-  TM8.dispStr("ACCL", 0);
-  wire1.beginTransmission(ACCEL_ADDRESS);
-  TM8.blinkGo(!wire1.endTransmission()); deviceCount++;
-
-  TM8.dispStr("TEMP", 0);
-  wire1.beginTransmission(BME_ADDRESS);
-  TM8.blinkGo(!wire1.endTransmission()); deviceCount++;
-
-  delay(750);
-  if (deviceCount == 5) { // if all devices detected
-    TM8.dispStr("", 1);
-    TM8.dispStr("All ", 0);
-    tone(9, 2000, 100);
-    delay(500);
-    TM8.dispStr("Syst", 0);
-    TM8.dispStr("ems", 1);
-    tone(9, 2000, 100);
-    delay(500);
-    TM8.dispStr("", 1);
-    for (int i=0; i<7; i++) {
-      TM8.dispStr(" GO ", 0);
-      tone(9, 4000);
-      delay(75);
-      TM8.dispStr("", 0);
-      noTone(9);
-      delay(75);
-    }
-  } else { // if a different number of devices detected
-    for (int i=0; i<5; i++) {
-      TM8.dispStr(" Err", 0);
-      TM8.dispStr("or  ", 1);
-      delay(500);
-      TM8.dispStr("dcnt", 0);
-      TM8.dispDec(deviceCount, 1); // show number of devices detected
-      delay(500);
-    }
-  }
 }
 
 uint8_t getDayOfWeek(uint16_t y, uint16_t m, uint16_t d) {
@@ -664,7 +534,7 @@ uint8_t party() {
       TM8.dispStr("", 0);
       TM8.dispStr("", 1);
       delay(5000);
-      animTach();
+      TM8.animTach();
     }
     if (!readBtn2) {
       cnt = !cnt;
@@ -672,11 +542,11 @@ uint8_t party() {
     if (!readBtn1) {
       delay(5000);
       for (int i=0; i<5; i++) {
-        digitalWrite(leds[i], 1);
+        digitalWrite(TM8.leds[i], 1);
       }
       delay(5000);
       for (int i=0; i<5; i++) {
-        digitalWrite(leds[i], 0);
+        digitalWrite(TM8.leds[i], 0);
       }
       return 0;
     }
@@ -820,7 +690,7 @@ void game() {
     if (gameNo > 3) {gameNo = 1;}
   }
   for (int i=3; i>0; i--) {
-    animSwipeDown(30);
+    TM8.animSwipeDown(30);
   }
   switch (gameNo) {
   case 1:
@@ -851,7 +721,7 @@ void flashLight() {
     }
     // digitalWrite(6, flash);
     for (int i=0; i<5; i++) {
-      digitalWrite(leds[i], flash);
+      digitalWrite(TM8.leds[i], flash);
     }
   }
   digitalWrite(6, 0);
@@ -997,14 +867,14 @@ void runMainProgram(uint8_t prog) {
     delay(1000);
     break;
   }
-  scrambleAnim(8, 30);
+  TM8.scrambleAnim(8, 30);
 }
 
 uint8_t firingOrder[] = {1, 5, 3, 7, 4, 8, 2, 6};
 
 uint8_t starter() {
   for (int i=0; i<3; i++) {
-    animSwipeDown(30);
+    TM8.animSwipeDown(30);
   }
 
   uint8_t battLvl = (uint8_t) fuel.cellPercent();
@@ -1218,13 +1088,13 @@ void wakeToCheck() {
       }
       menuActive = false;
     } else if (showDateActive) {
-      scrambleAnim(8, 30);
+      TM8.scrambleAnim(8, 30);
       TM8.dispDec(rtc.getMonth() * 100 + rtc.getDay(), 0);
       TM8.dispStr(daysOfTheWeek[getDayOfWeek(rtc.getYear() + 2000, rtc.getMonth(), rtc.getDay())], 1);
       delay(1000);
       showDateActive = false;
     }
-    scrambleAnim(8, 30);
+    TM8.scrambleAnim(8, 30);
     TM8.dispStr("ovta", 0);
     TM8.dispStr("time", 1);
     USBDevice.detach();
@@ -1236,7 +1106,7 @@ void alwaysOnDisplay() {
   while (1) { // loop forever, "home screen" if you will
     //if menuInt() ISR is called, pull up menu and run chosen main program 
     if (menuActive) {
-      scrambleAnim(8, 30);
+      TM8.scrambleAnim(8, 30);
       runMainProgram(mainMenu());
       attachInterrupt(btn3, menuInt, FALLING); // reattach interrupt to resume normal button function in main()
       attachInterrupt(btn1, showDateInt, FALLING);
@@ -1244,7 +1114,7 @@ void alwaysOnDisplay() {
       showDateActive = false;
       actionActive = false;
     } else if (showDateActive) {
-      scrambleAnim(8, 30);
+      TM8.scrambleAnim(8, 30);
       uint32_t startTime = millis();
       while (millis() - startTime <= 1000) {
         TM8.dispDec(rtc.getMonth() * 100 + rtc.getDay(), 0);
@@ -1256,7 +1126,7 @@ void alwaysOnDisplay() {
           showDateActive = false;
         }
       }
-      scrambleAnim(8, 30);
+      TM8.scrambleAnim(8, 30);
       showDateActive = false;
     }
     if (actionActive) {
@@ -1370,7 +1240,7 @@ void setup() {
   pinMode(9, OUTPUT); // piezo
 
   for (int i=0; i<5; i++) { // set LEDs to output
-    pinMode(leds[i], OUTPUT);
+    pinMode(TM8.leds[i], OUTPUT);
   }
 
   // enable pullups for PA12, sets it to input, writes HIGH to it
@@ -1418,7 +1288,7 @@ void setup() {
   //if BTN4 isn't pressed, run starter() and second system init
   if (readBtn4 || fuel.cellPercent() <= 10) {
     starter();
-    sysCheck();
+    TM8.sysCheck();
   }
   menuActive = false; // for some reason starter() triggers menuInt(), so I need this to prevent the watch from booting straight into the menu
   showDateActive = false; // same reason

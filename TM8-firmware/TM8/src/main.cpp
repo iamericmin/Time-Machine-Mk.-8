@@ -54,7 +54,10 @@ TM8_util TM8;
 const uint8_t btn1 = 2; // top left button
 const uint8_t btn2 = 38; // bottom left button
 const uint8_t btn3 = 24; // top right button
+const uint8_t btn4 = 22; // bottom right button
 const uint8_t led5 = 5; // LED5, middle auxilliary LED
+
+uint8_t localLEDs[5] = {7, A3, A1, 8, 5};
 
 bool menuActive = false; // main Menu ISR handler variable,
 // becomes true when main menu is opened and false when menu's over
@@ -81,7 +84,7 @@ uint8_t minutes = 0;
 uint8_t hours = 0;
 uint16_t year = 23;
 uint8_t month = 12;
-uint8_t day = 17;
+uint8_t day = 20;
 
 /*
 Main menu interrupt handler.
@@ -542,11 +545,11 @@ uint8_t party() {
     if (!readBtn1) {
       delay(5000);
       for (int i=0; i<5; i++) {
-        digitalWrite(TM8.leds[i], 1);
+        digitalWrite(localLEDs[i], 1);
       }
       delay(5000);
       for (int i=0; i<5; i++) {
-        digitalWrite(TM8.leds[i], 0);
+        digitalWrite(localLEDs[i], 0);
       }
       return 0;
     }
@@ -721,7 +724,7 @@ void flashLight() {
     }
     // digitalWrite(6, flash);
     for (int i=0; i<5; i++) {
-      digitalWrite(TM8.leds[i], flash);
+      digitalWrite(localLEDs[i], flash);
     }
   }
   digitalWrite(6, 0);
@@ -1103,7 +1106,7 @@ void wakeToCheck() {
 }
 
 void alwaysOnDisplay() {
-  while (1) { // loop forever, "home screen" if you will
+  for(;;) { // loop forever, "home screen" if you will
     //if menuInt() ISR is called, pull up menu and run chosen main program 
     if (menuActive) {
       TM8.scrambleAnim(8, 30);
@@ -1124,13 +1127,14 @@ void alwaysOnDisplay() {
           attachInterrupt(btn1, showDateInt, FALLING);
           menuActive = false; // reset menuActive to false
           showDateActive = false;
+          actionActive = false;
         }
       }
       TM8.scrambleAnim(8, 30);
       showDateActive = false;
-    }
-    if (actionActive) {
-      showBMEData(2000);
+    } else if (actionActive) {
+      TM8.dispStr("good", 0);
+      delay(2000);
       actionActive = false;
     }
 
@@ -1139,7 +1143,7 @@ void alwaysOnDisplay() {
 
     // LCD displays hours and minutes on the left, seconds on the right
     TM8.dispDec(rtc.getHours() * 100 + rtc.getMinutes(), 0);
-    TM8.dispDec(rtc.getSeconds() * 100 + battLvl, 1);
+    TM8.dispDec(rtc.getSeconds() * 100 + battLvl, 1); 
     USBDevice.detach();
     LowPower.deepSleep(996);
   }
@@ -1240,7 +1244,7 @@ void setup() {
   pinMode(9, OUTPUT); // piezo
 
   for (int i=0; i<5; i++) { // set LEDs to output
-    pinMode(TM8.leds[i], OUTPUT);
+    pinMode(localLEDs[i], OUTPUT);
   }
 
   // enable pullups for PA12, sets it to input, writes HIGH to it
@@ -1255,7 +1259,9 @@ void setup() {
   // set to FALLING because RISING would often trigger the interrupt but not actually run the ISR,
   // leading to systemw-wide clock delays
   LowPower.attachInterruptWakeup(btn1, showDateInt, FALLING);
-  LowPower.attachInterruptWakeup(btn2, actionInt, FALLING); // BTN2 is the "action buttton", programmable
+  //LowPower.attachInterruptWakeup(btn2, actionInt, FALLING); // BTN2 is the "action buttton", programmable
+  attachInterrupt(btn2, actionInt, FALLING); // for some reason, LowPower.attachInterruptWakeup does not work!!! No idea why!!!
+  attachInterrupt(btn4, actionInt, FALLING);
   LowPower.attachInterruptWakeup(btn3, menuInt, FALLING);
 
   // disable all unnecessary peripherals

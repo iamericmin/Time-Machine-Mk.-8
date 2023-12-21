@@ -49,6 +49,7 @@ TM8 hardware definitions
 #define ROM_ADDRESS 0x50
 
 //----------------------------------------------------------------------------
+uint8_t leds[TM8_NUM_LEDS] = {7, A3, A1, 8, 5};
 
 static uint8_t Segs[] =
 {
@@ -350,8 +351,6 @@ void TM8_util::scrambleAnim(uint8_t cnt, uint8_t animDelay) {
     delay(animDelay);
   }
 }
-
-static uint8_t leds[TM8_NUM_LEDS] = {7, A3, A1, 8, 5};
 
 // animation mimicking tachometer start-up on vintage cars
 void TM8_util::animTach() {

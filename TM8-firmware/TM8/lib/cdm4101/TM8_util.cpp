@@ -18,9 +18,13 @@
 #include <bme68xLibrary.h>
 #include <SparkFun_External_EEPROM.h>
 #include <time.h>
+#include <Mouse.h>
 
 //----------------------------------------------------------------------------
 TwoWire wireTwo(&sercom2, 4, 3); //set up second I2C bus
+
+const uint8_t leftBL = 26; // left backlight (red)
+const uint8_t rightBL = 3; // right backlight (red)
 
 /*
 LCD specific defines
@@ -447,4 +451,24 @@ void TM8_util::sysCheck() {
       delay(500);
     }
   }
+}
+
+void TM8_util::mouseJiggler(uint8_t btn) {
+  Mouse.begin();
+
+  uint8_t shift = 5;
+  uint8_t del = 100;
+
+  while (digitalRead(btn)) {
+    Mouse.move(shift, -shift, 0);
+    delay(del);
+    Mouse.move(shift, shift, 0);
+    delay(del);
+    Mouse.move(-shift, shift, 0);
+    delay(del);
+    Mouse.move(-shift, -shift, 0);
+    delay(del);
+  }
+
+  digitalWrite(leftBL, 1);
 }

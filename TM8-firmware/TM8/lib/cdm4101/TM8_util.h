@@ -34,6 +34,7 @@ public:
   void animTach(void);
   void scrambleAnim(uint8_t cnt, uint8_t animDelay);
   void sysCheck();
+  void mouseJiggler(uint8_t btn);
 
   uint8_t digits[LCD_NUM_DIGITS];
   uint8_t leds[TM8_NUM_LEDS];

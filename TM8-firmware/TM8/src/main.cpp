@@ -55,7 +55,9 @@ const uint8_t btn1 = 2; // top left button
 const uint8_t btn2 = 38; // bottom left button
 const uint8_t btn3 = 24; // top right button
 const uint8_t btn4 = 22; // bottom right button
-const uint8_t led5 = 5; // LED5, middle auxilliary LED
+
+const uint8_t leftBL = 26; // left backlight (red)
+const uint8_t rightBL = 3; // right backlight (red)
 
 uint8_t localLEDs[5] = {7, A3, A1, 8, 5};
 
@@ -327,8 +329,8 @@ bool chronoGraph() {
     TM8.dispDec(chronoMinutes * 100 + chronoSeconds, 0); // display elapsed time on LCD
     TM8.dispDec(chronoMillis * 10 + chronoSplitsCounter, 1); // display elapsed milliseconds + split record slot on the right
     if (!readBtn3 && chronoSplitsCounter < 10) { // if button 3 is pressed and split record space is available
-      while(!readBtn3) {digitalWrite(led5, 1);} // show split time & light up LED5 while btn3 is depressed
-      digitalWrite(led5, 0); // turn off LED5
+      while(!readBtn3) {digitalWrite(localLEDs[5], 1);} // show split time & light up LED5 while btn3 is depressed
+      digitalWrite(localLEDs[5], 0); // turn off LED5
       TM8.dispDec(chronoMinutes * 100 + chronoSeconds, 0); // display split time
       TM8.dispDec(chronoMillis * 10 + chronoSplitsCounter, 1);
       chronoSplits[chronoSplitsCounter] = chronoMinutes * 100000 + chronoSeconds * 1000 + chronoMillis;
@@ -425,11 +427,11 @@ bool raceChrono() {
     TM8.dispDec(raceMillis * 10 + raceSplitsCounter, 1); // display elapsed milliseconds + split record slot on the right
     if (!readBtn3 && raceSplitsCounter < 100) { // if button 3 is pressed and split record space is available.
       while(!readBtn3) {
-        digitalWrite(led5, 1); // show split time & light up LED5 while btn3 is depressed
+        digitalWrite(localLEDs[5], 1); // show split time & light up LED5 while btn3 is depressed
         TM8.dispDec(raceMinutes * 100 + raceSeconds, 0); // display split time
         TM8.dispDec(raceMillis, 1);
       }
-      digitalWrite(led5, 0); // turn off LED5
+      digitalWrite(localLEDs[5], 0); // turn off LED5
       float vavg = (distances[trackSelection]) / (float)((float)(millis() - raceStartTime) / 1000 / 3600);
       TM8.dispDec((int)(vavg), 0);
       TM8.dispDec(((vavg - (int)(vavg)) * 100), 1);
@@ -1114,8 +1116,6 @@ void alwaysOnDisplay() {
       attachInterrupt(btn3, menuInt, FALLING); // reattach interrupt to resume normal button function in main()
       attachInterrupt(btn1, showDateInt, FALLING);
       menuActive = false; // reset menuActive to false
-      showDateActive = false;
-      actionActive = false;
     } else if (showDateActive) {
       TM8.scrambleAnim(8, 30);
       uint32_t startTime = millis();
@@ -1125,16 +1125,15 @@ void alwaysOnDisplay() {
         if (!readBtn1 && millis() - startTime <= 200) {
           setDate();
           attachInterrupt(btn1, showDateInt, FALLING);
-          menuActive = false; // reset menuActive to false
           showDateActive = false;
-          actionActive = false;
         }
       }
       TM8.scrambleAnim(8, 30);
       showDateActive = false;
     } else if (actionActive) {
-      TM8.dispStr("good", 0);
-      delay(2000);
+      while(!digitalRead(btn2));
+      TM8.mouseJiggler(btn2);
+      attachInterrupt(btn2, actionInt, FALLING);
       actionActive = false;
     }
 

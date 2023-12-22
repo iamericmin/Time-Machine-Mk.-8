@@ -1,7 +1,8 @@
 arduino-libraries/RTCZero@^1.6.0
+arduino-libraries/Arduino Low Power@^1.2.2
+arduino-libraries/Keyboard@^1.0.5
+sparkfun/SparkFun LIS3DH Arduino Library@^1.0.3
 sparkfun/SparkFun External EEPROM Arduino Library@^2.0.1
 arduino-libraries/Mouse@^1.0.1
-sparkfun/SparkFun LIS3DH Arduino Library@^1.0.3
-arduino-libraries/Arduino Low Power@^1.2.2
-boschsensortec/BME68x Sensor library@^1.1.40407
 adafruit/Adafruit MAX1704X@^1.0.0
+boschsensortec/BME68x Sensor library@^1.1.40407

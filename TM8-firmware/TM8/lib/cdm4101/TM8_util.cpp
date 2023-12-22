@@ -19,6 +19,7 @@
 #include <SparkFun_External_EEPROM.h>
 #include <time.h>
 #include <Mouse.h>
+#include <Keyboard.h>
 
 //----------------------------------------------------------------------------
 TwoWire wireTwo(&sercom2, 4, 3); //set up second I2C bus
@@ -51,6 +52,11 @@ TM8 hardware definitions
 #define ACCEL_ADDRESS 0x18
 #define BME_ADDRESS 0x76
 #define ROM_ADDRESS 0x50
+
+#define readBtn1 (PORT->Group[0].IN.reg & (1 << 14))
+#define readBtn2 (PORT->Group[0].IN.reg & (1 << 13))
+#define readBtn3 (PORT->Group[1].IN.reg & (1 << 11))
+#define readBtn4 (PORT->Group[0].IN.reg & (1 << 12))
 
 //----------------------------------------------------------------------------
 uint8_t leds[TM8_NUM_LEDS] = {7, A3, A1, 8, 5};
@@ -453,22 +459,39 @@ void TM8_util::sysCheck() {
   }
 }
 
-void TM8_util::mouseJiggler(uint8_t btn) {
+// HID utilities. Mouse jiggler and screen lock shortcut.
+// exitBtn is the button used to exit mouse jiggler
+void TM8_util::HIDutils(uint8_t exitBtn) {
   Mouse.begin();
-
-  uint8_t shift = 5;
-  uint8_t del = 100;
-
-  while (digitalRead(btn)) {
-    Mouse.move(shift, -shift, 0);
-    delay(del);
-    Mouse.move(shift, shift, 0);
-    delay(del);
-    Mouse.move(-shift, shift, 0);
-    delay(del);
-    Mouse.move(-shift, -shift, 0);
-    delay(del);
+  Keyboard.begin();
+  dispStr("HID ", 0);
+  dispStr("util", 1);
+  uint32_t currentTime = millis();
+  while (millis() - currentTime <= 2000) {
+    if (!readBtn1) {
+      uint8_t shift = 5;
+      uint8_t del = 100;
+      while (digitalRead(exitBtn)) {
+        Mouse.move(shift, -shift, 0);
+        delay(del);
+        Mouse.move(shift, shift, 0);
+        delay(del);
+        Mouse.move(-shift, shift, 0);
+        delay(del);
+        Mouse.move(-shift, -shift, 0);
+        delay(del);
+      }
+      while(!digitalRead(exitBtn)); // so that exitBtn doesn't trigger something else immediately after exiting jiggler
+    } else if (!readBtn2) {
+      Keyboard.press(KEY_LEFT_GUI);
+      Keyboard.write('l');
+      Keyboard.releaseAll();
+    }
+    if (!readBtn4) {
+      return;
+    }
   }
-
   digitalWrite(leftBL, 1);
+  Mouse.end();
+  Keyboard.end();
 }

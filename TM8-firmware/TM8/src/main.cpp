@@ -1131,15 +1131,18 @@ void alwaysOnDisplay() {
       TM8.scrambleAnim(8, 30);
       showDateActive = false;
     } else if (actionActive) {
-      while(!digitalRead(btn2));
-      TM8.mouseJiggler(btn2);
-      attachInterrupt(btn2, actionInt, FALLING);
+      while(!digitalRead(btn1));
+      TM8.scrambleAnim(8, 30);
+      TM8.HIDutils(btn2);
+      attachInterrupt(btn1, showDateInt, FALLING);
+      menuActive = false; // set ISR flags false, idk why but showDate and mainMenu is called after HIDutil without these
+      showDateActive = false;
       actionActive = false;
+      TM8.scrambleAnim(8, 30);
     }
 
     uint8_t battLvl = (uint8_t) fuel.cellPercent();
     if (battLvl > 99) battLvl = 99;
-
     // LCD displays hours and minutes on the left, seconds on the right
     TM8.dispDec(rtc.getHours() * 100 + rtc.getMinutes(), 0);
     TM8.dispDec(rtc.getSeconds() * 100 + battLvl, 1); 

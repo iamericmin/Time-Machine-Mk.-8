@@ -67,9 +67,10 @@ bool menuActive = false; // main Menu ISR handler variable,
 bool showDateActive = false; // interrupt for showing date on home screen.
 // triggered by BTN1
 
-bool splitActive = false; // ISR handler variable for recording splits in chronograph
+bool btn2IntActive = false; // ISR handler for BTN2
+bool btn4IntActive = false; // ISR handler for BTN4
 
-bool actionActive = false; // ISR handler for action button (BTN2)
+bool splitActive = false; // ISR handler variable for recording splits in chronograph
 
 bool dispMode = 1; // 0 for wakeToCheck, 1 for AOD
 
@@ -102,8 +103,12 @@ void showDateInt() {
   showDateActive = true;
 }
 
-void actionInt() {
-  actionActive = true;
+void btn2Int() {
+  btn2IntActive = true;
+}
+
+void btn4Int() {
+  btn4IntActive = true;
 }
 
 // ISR for recording splits in chronograph
@@ -797,8 +802,6 @@ After approx. 2 seconds of inactivity, mainMenu() returns 0 and goes back to hom
 uint8_t mainMenu() {
   uint8_t mainProgramNumber = 1; // counter variable for scrolling through list of programs in main menu
   uint32_t startTime = millis(); // time when function starts
-  detachInterrupt(btn3); // detach interrupts for button use during function
-  detachInterrupt(btn1);
   while (millis() - startTime <= INACTIVITY_TIMEOUT) { // while under timeout threshold
     TM8.dispDec(mainProgramNumber, 0); // display program number on the left, but it starts from 1, not 0
     TM8.dispStr(mainPrograms[mainProgramNumber], 1); // display program name on the right
@@ -1113,9 +1116,10 @@ void alwaysOnDisplay() {
     if (menuActive) {
       TM8.scrambleAnim(8, 30);
       runMainProgram(mainMenu());
-      attachInterrupt(btn3, menuInt, FALLING); // reattach interrupt to resume normal button function in main()
-      attachInterrupt(btn1, showDateInt, FALLING);
-      menuActive = false; // reset menuActive to false
+      menuActive = false;
+      showDateActive = false;
+      btn2IntActive = false;
+      btn4IntActive = false;
     } else if (showDateActive) {
       TM8.scrambleAnim(8, 30);
       uint32_t startTime = millis();
@@ -1124,21 +1128,31 @@ void alwaysOnDisplay() {
         TM8.dispStr(daysOfTheWeek[getDayOfWeek(rtc.getYear() + 2000, rtc.getMonth(), rtc.getDay())], 1);
         if (!readBtn1 && millis() - startTime <= 200) {
           setDate();
-          attachInterrupt(btn1, showDateInt, FALLING);
+          menuActive = false;
           showDateActive = false;
+          btn2IntActive = false;
+          btn4IntActive = false;
         }
       }
       TM8.scrambleAnim(8, 30);
       showDateActive = false;
-    } else if (actionActive) {
+    } else if (btn2IntActive) {
       while(!digitalRead(btn1));
       TM8.scrambleAnim(8, 30);
       TM8.HIDutils(btn2);
-      attachInterrupt(btn1, showDateInt, FALLING);
+      menuActive = false;
+      showDateActive = false;
+      btn2IntActive = false;
+      btn4IntActive = false;
+      TM8.scrambleAnim(8, 30);
+    } else if (btn4IntActive) {
+      TM8.scrambleAnim(8, 30);
+      TM8.pomodoro();
+      TM8.scrambleAnim(8, 30);
       menuActive = false; // set ISR flags false, idk why but showDate and mainMenu is called after HIDutil without these
       showDateActive = false;
-      actionActive = false;
-      TM8.scrambleAnim(8, 30);
+      btn2IntActive = false;
+      btn4IntActive = false;
     }
 
     uint8_t battLvl = (uint8_t) fuel.cellPercent();
@@ -1261,9 +1275,9 @@ void setup() {
   // set to FALLING because RISING would often trigger the interrupt but not actually run the ISR,
   // leading to systemw-wide clock delays
   LowPower.attachInterruptWakeup(btn1, showDateInt, FALLING);
-  //LowPower.attachInterruptWakeup(btn2, actionInt, FALLING); // BTN2 is the "action buttton", programmable
-  attachInterrupt(btn2, actionInt, FALLING); // for some reason, LowPower.attachInterruptWakeup does not work!!! No idea why!!!
-  attachInterrupt(btn4, actionInt, FALLING);
+  //LowPower.attachInterruptWakeup(btn2, btn2Int, FALLING); // BTN2 is the "action buttton", programmable
+  attachInterrupt(btn2, btn2Int, FALLING); // for some reason, LowPower.attachInterruptWakeup does not work!!! No idea why!!!
+  attachInterrupt(btn4, btn4Int, FALLING);
   LowPower.attachInterruptWakeup(btn3, menuInt, FALLING);
 
   // disable all unnecessary peripherals
@@ -1300,7 +1314,8 @@ void setup() {
   }
   menuActive = false; // for some reason starter() triggers menuInt(), so I need this to prevent the watch from booting straight into the menu
   showDateActive = false; // same reason
-  actionActive = false;
+  btn2IntActive = false;
+  btn4IntActive = false;
 }
 
 // main function

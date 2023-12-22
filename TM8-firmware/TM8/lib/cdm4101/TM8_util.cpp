@@ -495,3 +495,9 @@ void TM8_util::HIDutils(uint8_t exitBtn) {
   Mouse.end();
   Keyboard.end();
 }
+
+void TM8_util::pomodoro() {
+  dispStr("POMO", 0);
+  dispStr("DORO", 1);
+  delay(2000);
+}

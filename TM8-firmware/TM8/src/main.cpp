@@ -85,9 +85,9 @@ uint8_t numPrograms = sizeof(mainPrograms) / sizeof(mainPrograms[0]);
 uint8_t seconds = 0;
 uint8_t minutes = 0;
 uint8_t hours = 0;
-uint16_t year = 23;
-uint8_t month = 12;
-uint8_t day = 20;
+uint16_t year = 24;
+uint8_t month = 11;
+uint8_t day = 14;
 
 /*
 Main menu interrupt handler.
@@ -133,13 +133,15 @@ bool setTime() {
   uint8_t minuteOnes = 0; // minute ones digit
   bool ampm = 0; // 0 for AM, 1 for PM
   TM8.dispStr("hour", 1); // indicate hour set mode
-  while(readBtn3) { // until btn4 is pressed
+  uint32_t currentTime = millis();
+  while(readBtn3 && millis() - currentTime <= 3000) { // until btn4 is pressed
     TM8.dispDec(hourTens * 10 + hourOnes, 0); // display hour value to set
     if (!readBtn1) { // btn1 increments tens digit
       hourTens++;
       if (hourTens > 2 || hourTens * 10 + hourOnes > 23) { // prevent overflow to stay within 0-23
         hourTens = 0;
       }
+      currentTime = millis();
       delay(BUTTON_DELAY);
     }
     if (!readBtn2) { // btn2 increments ones digit
@@ -147,9 +149,13 @@ bool setTime() {
       if (hourOnes > 9 || hourTens * 10 + hourOnes > 23) { // prevent overflow to stay within 0-23
         hourOnes = 0;
       }
+      currentTime = millis();
       delay(BUTTON_DELAY);
     }
     if (!readBtn4) { // exit function for when triggered by mistake
+      return 0;
+    }
+    if (millis() - currentTime > 3000) {
       return 0;
     }
   }
@@ -1110,8 +1116,14 @@ void wakeToCheck() {
   }
 }
 
+/*
+- "home screen", a big forever loop
+- Checks for ISR flags, then displays time and battery
+- ISR flags need to be set back to false after getting called to prevent them
+from being triggered by button presses within an app
+*/
 void alwaysOnDisplay() {
-  for(;;) { // loop forever, "home screen" if you will
+  for(;;) { // loop forever
     //if menuInt() ISR is called, pull up menu and run chosen main program 
     if (menuActive) {
       TM8.scrambleAnim(8, 30);
@@ -1312,6 +1324,7 @@ void setup() {
     starter();
     TM8.sysCheck();
   }
+
   menuActive = false; // for some reason starter() triggers menuInt(), so I need this to prevent the watch from booting straight into the menu
   showDateActive = false; // same reason
   btn2IntActive = false;

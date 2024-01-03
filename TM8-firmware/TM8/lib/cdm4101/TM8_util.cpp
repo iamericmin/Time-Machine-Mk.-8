@@ -23,6 +23,7 @@
 
 //----------------------------------------------------------------------------
 TwoWire wireTwo(&sercom2, 4, 3); //set up second I2C bus
+RTCZero rtczero;
 
 const uint8_t leftBL = 26; // left backlight (red)
 const uint8_t rightBL = 3; // right backlight (red)
@@ -497,7 +498,65 @@ void TM8_util::HIDutils(uint8_t exitBtn) {
 }
 
 void TM8_util::pomodoro() {
+  uint32_t studyLen = 10000; // amount of time to "study" for (default 25 mins)
+  uint32_t restLen = 5000; // amount of time to rest (default 5 mins)
+  uint8_t warningTime = 5; // number of seconds to start warning before time's up
+  uint32_t millisLeft;
+  uint32_t secsLeft;
+  uint32_t minsLeft;
+  uint32_t startTime;
+  uint32_t stopTime;
   dispStr("POMO", 0);
   dispStr("DORO", 1);
-  delay(2000);
+  uint8_t count = 4;
+  startTime = millis();
+  while (millis() - startTime <= 3000) {
+    if (!readBtn4) {
+      return;
+    }
+  }
+  for (int i=0; i<count; i++) {
+    startTime = millis();
+    stopTime = startTime + studyLen; // time to stop timer. Current time + timer length
+    while(stopTime - millis() - warningTime * 1000 <= studyLen) {
+      dispStr("STUD", 0);
+      dispStr("y   ", 1);
+      while(!readBtn3 && stopTime - millis() - warningTime * 1000 <= studyLen) {
+        millisLeft = stopTime - millis();
+        secsLeft = millisLeft / 1000;
+        minsLeft = secsLeft / 60;
+        millisLeft %= 1000;
+        secsLeft %= 60;
+        minsLeft %= 60;
+        dispDec(minsLeft * 100 + secsLeft, 0);
+        dispDec(millisLeft, 1);
+      }
+    }
+    for (int i=0; i<warningTime; i++) {
+      digitalWrite(leds[i], 1);
+      delay(1000);
+    }
+    tone(9, 4000, 1500);
+    dispStr("done", 0);
+    dispDec(i+1, 1);
+    delay(3000);
+    startTime = millis();
+    stopTime = startTime + restLen;
+    dispStr("PLAY", 0);
+    dispStr("TIME", 1);
+    while(stopTime - millis() <= restLen) {
+      millisLeft = stopTime - millis();
+      secsLeft = millisLeft / 1000;
+      minsLeft = secsLeft / 60;
+      millisLeft %= 1000;
+      secsLeft %= 60;
+      minsLeft %= 60;
+      dispDec(minsLeft * 100 + secsLeft, 0);
+      dispDec(millisLeft, 1);
+    }
+    tone(9, 4000, 1500);
+    dispStr("rest", 0);
+    dispStr("done", 1);
+    delay(3000);
+  }
 }

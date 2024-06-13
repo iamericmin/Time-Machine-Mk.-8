@@ -22,7 +22,7 @@
 #include <Keyboard.h>
 
 //----------------------------------------------------------------------------
-TwoWire wireTwo(&sercom2, 4, 3); //set up second I2C bus
+TwoWire wireTwo(&sercom2, 4, 3); //set up second ssI2C bus
 RTCZero rtczero;
 
 const uint8_t leftBL = 26; // left backlight (red)
@@ -60,7 +60,7 @@ TM8 hardware definitions
 #define readBtn4 (PORT->Group[0].IN.reg & (1 << 12))
 
 //----------------------------------------------------------------------------
-uint8_t leds[TM8_NUM_LEDS] = {7, A3, A1, 8, 5};
+uint8_t TM8_LED[5] = {7, A3, A1, 8, 5};
 
 static uint8_t Segs[] =
 {
@@ -366,13 +366,13 @@ void TM8_util::scrambleAnim(uint8_t cnt, uint8_t animDelay) {
 // animation mimicking tachometer start-up on vintage cars
 void TM8_util::animTach() {
   srand(analogRead(A0)); // set random seed to analog noise on A0
-  uint8_t buffer; // buffer variable used for swapping leds[] elements
+  uint8_t buffer; // buffer variable used for swapping TM8_LED[] elements
   for (int i=4; i>=0; i--) { // decrease RNG range for no overlap
     int ledToLight = random(0, i+1); // choose random LED to light
-    buffer = leds[ledToLight]; // swap randomly selected LED with last array value.
-    leds[ledToLight] = leds[i]; // randomly selected LED goes last in the array
-    leds[i] = buffer; // last array element goes to where randomly selected LED was
-    digitalWrite(leds[i], 1); // light up randomly selected LED
+    buffer = TM8_LED[ledToLight]; // swap randomly selected LED with last array value.
+    TM8_LED[ledToLight] = TM8_LED[i]; // randomly selected LED goes last in the array
+    TM8_LED[i] = buffer; // last array element goes to where randomly selected LED was
+    digitalWrite(TM8_LED[i], 1); // light up randomly selected LED
     delay(100);
   }
   for (int i=0; i<7; i++) { // for each frame of tachInit[] animation
@@ -394,10 +394,10 @@ void TM8_util::animTach() {
   }
   for (int i=4; i>=0; i--) { // Turns off all LEDs in a totally new random order.
     int ledToLight = random(0, i+1);
-    buffer= leds[ledToLight];
-    leds[ledToLight] = leds[i];
-    leds[i] = buffer;
-    digitalWrite(leds[i], 0);
+    buffer= TM8_LED[ledToLight];
+    TM8_LED[ledToLight] = TM8_LED[i];
+    TM8_LED[i] = buffer;
+    digitalWrite(TM8_LED[i], 0);
     delay(100);
   }
 }
@@ -533,7 +533,7 @@ void TM8_util::pomodoro() {
       }
     }
     for (int i=0; i<warningTime; i++) {
-      digitalWrite(leds[i], 1);
+      digitalWrite(TM8_LED[i], 1);
       delay(1000);
     }
     tone(9, 4000, 1500);

@@ -59,7 +59,7 @@ const uint8_t btn4 = 22; // bottom right button
 const uint8_t leftBL = 26; // left backlight (red)
 const uint8_t rightBL = 3; // right backlight (red)
 
-uint8_t localLEDs[5] = {7, A3, A1, 8, 5};
+uint8_t leds[5] = {7, A3, A1, 8, 5};
 
 bool menuActive = false; // main Menu ISR handler variable,
 // becomes true when main menu is opened and false when menu's over
@@ -84,10 +84,10 @@ uint8_t numPrograms = sizeof(mainPrograms) / sizeof(mainPrograms[0]);
 // RTC time variables
 uint8_t seconds = 0;
 uint8_t minutes = 0;
-uint8_t hours = 0;
+uint8_t hours = 12;
 uint16_t year = 24;
-uint8_t month = 11;
-uint8_t day = 14;
+uint8_t month = 12;
+uint8_t day = 29;
 
 /*
 Main menu interrupt handler.
@@ -292,7 +292,7 @@ bool setDate() {
   TM8.dispDec(month, 0);
   TM8.dispDec(date, 1);
   delay(2000);
-  rtc.setDate(date, month, 23);
+  rtc.setDate(date, month, year);
   TM8.dispStr("date", 0);
   TM8.dispStr(" set", 1);
   delay(1000);
@@ -340,8 +340,8 @@ bool chronoGraph() {
     TM8.dispDec(chronoMinutes * 100 + chronoSeconds, 0); // display elapsed time on LCD
     TM8.dispDec(chronoMillis * 10 + chronoSplitsCounter, 1); // display elapsed milliseconds + split record slot on the right
     if (!readBtn3 && chronoSplitsCounter < 10) { // if button 3 is pressed and split record space is available
-      while(!readBtn3) {digitalWrite(localLEDs[5], 1);} // show split time & light up LED5 while btn3 is depressed
-      digitalWrite(localLEDs[5], 0); // turn off LED5
+      while(!readBtn3) {digitalWrite(leds[5], 1);} // show split time & light up LED5 while btn3 is depressed
+      digitalWrite(leds[5], 0); // turn off LED5
       TM8.dispDec(chronoMinutes * 100 + chronoSeconds, 0); // display split time
       TM8.dispDec(chronoMillis * 10 + chronoSplitsCounter, 1);
       chronoSplits[chronoSplitsCounter] = chronoMinutes * 100000 + chronoSeconds * 1000 + chronoMillis;
@@ -438,11 +438,11 @@ bool raceChrono() {
     TM8.dispDec(raceMillis * 10 + raceSplitsCounter, 1); // display elapsed milliseconds + split record slot on the right
     if (!readBtn3 && raceSplitsCounter < 100) { // if button 3 is pressed and split record space is available.
       while(!readBtn3) {
-        digitalWrite(localLEDs[5], 1); // show split time & light up LED5 while btn3 is depressed
+        digitalWrite(leds[5], 1); // show split time & light up LED5 while btn3 is depressed
         TM8.dispDec(raceMinutes * 100 + raceSeconds, 0); // display split time
         TM8.dispDec(raceMillis, 1);
       }
-      digitalWrite(localLEDs[5], 0); // turn off LED5
+      digitalWrite(leds[5], 0); // turn off LED5
       float vavg = (distances[trackSelection]) / (float)((float)(millis() - raceStartTime) / 1000 / 3600);
       TM8.dispDec((int)(vavg), 0);
       TM8.dispDec(((vavg - (int)(vavg)) * 100), 1);
@@ -558,11 +558,11 @@ uint8_t party() {
     if (!readBtn1) {
       delay(5000);
       for (int i=0; i<5; i++) {
-        digitalWrite(localLEDs[i], 1);
+        digitalWrite(leds[i], 1);
       }
       delay(5000);
       for (int i=0; i<5; i++) {
-        digitalWrite(localLEDs[i], 0);
+        digitalWrite(leds[i], 0);
       }
       return 0;
     }
@@ -737,7 +737,7 @@ void flashLight() {
     }
     // digitalWrite(6, flash);
     for (int i=0; i<5; i++) {
-      digitalWrite(localLEDs[i], flash);
+      digitalWrite(leds[i], flash);
     }
   }
   digitalWrite(6, 0);
@@ -954,8 +954,8 @@ uint8_t starter() {
         if (cnt == 320) {
           delay(50);
           for (int i=0; i<5; i++) {
-            TM8.dispStr("PROJ", 0);
-            TM8.dispStr("ECT4", 1);
+            TM8.dispStr("ERIC", 0);
+            TM8.dispStr(" MIN", 1);
             tone(9, 4000);
             delay(60);
             TM8.dispStr("", 0);
@@ -1171,9 +1171,10 @@ void alwaysOnDisplay() {
     if (battLvl > 99) battLvl = 99;
     // LCD displays hours and minutes on the left, seconds on the right
     TM8.dispDec(rtc.getHours() * 100 + rtc.getMinutes(), 0);
-    TM8.dispDec(rtc.getSeconds() * 100 + battLvl, 1); 
+    //TM8.dispDec(rtc.getSeconds() * 100 + battLvl, 1); 
+    TM8.dispDec(battLvl, 1); 
     USBDevice.detach();
-    LowPower.deepSleep(996);
+    LowPower.deepSleep(59900);
   }
 }
 
@@ -1272,7 +1273,7 @@ void setup() {
   pinMode(9, OUTPUT); // piezo
 
   for (int i=0; i<5; i++) { // set LEDs to output
-    pinMode(localLEDs[i], OUTPUT);
+    pinMode(leds[i], OUTPUT);
   }
 
   // enable pullups for PA12, sets it to input, writes HIGH to it
@@ -1319,6 +1320,15 @@ void setup() {
   TM8.dispStr(" set", 1);
   delay(50);
 
+  // code for displaying stuff when taking pics for ads
+  // while(1) {
+  //   TM8.dispStr("big ", 0);
+  //   TM8.dispStr("tick", 1);
+  //   for (int i=0; i<5; i++) {
+  //     digitalWrite(leds[i], 1);
+  //   }
+  // }
+
   //if BTN4 isn't pressed, run starter() and second system init
   if (readBtn4 || fuel.cellPercent() <= 10) {
     starter();
@@ -1334,4 +1344,5 @@ void setup() {
 // main function
 void loop() {
   alwaysOnDisplay();
+  //wakeToCheck();
 }

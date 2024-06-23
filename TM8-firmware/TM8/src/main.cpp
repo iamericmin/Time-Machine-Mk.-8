@@ -87,7 +87,10 @@ uint8_t minutes = 0;
 uint8_t hours = 12;
 uint16_t year = 24;
 uint8_t month = 12;
+
 uint8_t day = 29;
+
+uint8_t temp = 0;
 
 /*
 Main menu interrupt handler.
@@ -1157,22 +1160,28 @@ void alwaysOnDisplay() {
       btn2IntActive = false;
       btn4IntActive = false;
       TM8.scrambleAnim(8, 30);
-    } else if (btn4IntActive) {
-      TM8.scrambleAnim(8, 30);
-      TM8.pomodoro();
-      TM8.scrambleAnim(8, 30);
-      menuActive = false; // set ISR flags false, idk why but showDate and mainMenu is called after HIDutil without these
-      showDateActive = false;
-      btn2IntActive = false;
-      btn4IntActive = false;
     }
+    // else if (btn4IntActive) {
+    //   TM8.scrambleAnim(8, 30);
+    //   TM8.pomodoro();
+    //   TM8.scrambleAnim(8, 30);
+    //   menuActive = false; // set ISR flags false, idk why but showDate and mainMenu is called after HIDutil without these
+    //   showDateActive = false;
+    //   btn2IntActive = false;
+    //   btn4IntActive = false;
+    // }
 
-    uint8_t battLvl = (uint8_t) fuel.cellPercent();
+    uint8_t battLvl = (uint8_t)fuel.cellPercent();
     if (battLvl > 99) battLvl = 99;
     // LCD displays hours and minutes on the left, seconds on the right
     TM8.dispDec(rtc.getHours() * 100 + rtc.getMinutes(), 0);
-    //TM8.dispDec(rtc.getSeconds() * 100 + battLvl, 1); 
-    TM8.dispDec(battLvl, 1); 
+    //TM8.dispDec(rtc.getSeconds() * 100 + battLvl, 1);
+    bme.setOpMode(BME68X_FORCED_MODE);
+    if (bme.fetchData()) {
+      bme.getData(BMEData);
+      temp = (int)BMEData.temperature;
+    } else {temp = 0;}
+    TM8.dispDec(temp * 100 + battLvl, 1); 
     USBDevice.detach();
     LowPower.deepSleep(59900);
   }
